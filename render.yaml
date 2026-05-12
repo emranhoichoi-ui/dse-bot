@@ -3,4 +3,4 @@ services:
     name: dse-signal-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    startCommand: python /opt/render/project/src/bot.py
