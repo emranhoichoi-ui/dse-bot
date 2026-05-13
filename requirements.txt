@@ -1,7 +1,7 @@
-python-telegram-bot==20.7
-anthropic==0.18.1
-requests==2.31.0
-beautifulsoup4==4.12.3
-apscheduler==3.10.4
-pytz==2024.1
-lxml==4.9.4
+python-telegram-bot
+anthropic
+requests
+beautifulsoup4
+apscheduler
+pytz
+lxml
