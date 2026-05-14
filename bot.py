@@ -2,6 +2,7 @@ import os,logging,requests,re
 from bs4 import BeautifulSoup
 from datetime import datetime
 import pytz
+print("bot running")
 from telegram import Update
 from telegram.ext import Application,CommandHandler,ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
