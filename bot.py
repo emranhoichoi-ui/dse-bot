@@ -153,9 +153,17 @@ async def cmd_signal(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
 async def cmd_ew(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text("🌊 EW স্ক্যান চলছে...")
-    stocks=fetch_stocks();scored=analyze(stocks);ew_list=find_ew(scored)
-    if not ew_list:await u.message.reply_text("আজ কোনো EW candidate নেই।");return
+    stocks=fetch_stocks()
+    scored=analyze(stocks)
+    ew_list=find_ew(scored)
+
+    if not ew_list:
+        await u.message.reply_text("আজ কোনো EW candidate নেই।")
+        return
+
     msg="🌊 *Elliott Wave 2/4 Bounce*\n\n"
-    for s in ew_list:msg+=f"*{s['symbol']}* `৳{s['ltp']}` ({s['change']:+.1f}%)\nEntry:`৳{s['entry']}` SL:`৳{s['sl']}` TP:`৳{s['tp1']}`\n_{s.get('ew_note','')}_\n\n"
+    for s in ew_list:
+        msg+=f"*{s['symbol']}* `৳{s['ltp']}` ({s['change']:+.1f}%)\nEntry:`৳{s['entry']}` SL:`৳{s['sl']}` TP:`৳{s['tp1']}`\n_{s.get('ew_note','')}_\n\n"
+
     msg+="⚠️ _Stop Loss সবসময় ব্যবহার করুন।_"
-    await u.me
+    await u.message.reply_text(msg, parse_mode='Markdown')
