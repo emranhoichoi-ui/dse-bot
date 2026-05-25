@@ -20,9 +20,9 @@ MIN_PRICE=1.0
 PENNY_THRESHOLD=10.0
 MIN_VOLUME=20000
 MAX_CHANGE=15.0
-TP1_MIN=0.08   # minimum 8%
-TP2_MIN=0.20   # minimum 20%
-DB_PATH='/tmp/dse_v3.db'
+TP1_MIN=0.08
+TP2_MIN=0.20
+DB_PATH='/tmp/dse_v4.db'
 
 # ══════════════════════════════════════
 #  DATABASE
@@ -35,6 +35,11 @@ def init_db():
         entry REAL,sl REAL,tp1 REAL,tp2 REAL,score REAL,
         indicators TEXT,outcome TEXT DEFAULT 'pending',
         outcome_pct REAL DEFAULT 0,check_date TEXT,created_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS breakouts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,symbol TEXT,entry REAL,
+        volume_ratio REAL,base_days INTEGER,
+        breakout_pct REAL,score REAL,created_at TEXT)''')
     conn.commit();conn.close()
 
 def save_signal(sym,sig,entry,sl,tp1,tp2,score,inds):
@@ -42,9 +47,20 @@ def save_signal(sym,sig,entry,sl,tp1,tp2,score,inds):
         conn=sqlite3.connect(DB_PATH);c=conn.cursor()
         now=datetime.now(BD_TZ)
         chk=(now+timedelta(days=5)).strftime('%Y-%m-%d')
-        c.execute('''INSERT INTO signals(date,symbol,signal_type,entry,sl,tp1,tp2,score,indicators,check_date,created_at)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
-                  (now.strftime('%Y-%m-%d'),sym,sig,entry,sl,tp1,tp2,score,json.dumps(inds),chk,now.isoformat()))
+        c.execute('''INSERT INTO signals(date,symbol,signal_type,entry,sl,tp1,tp2,score,
+                     indicators,check_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                  (now.strftime('%Y-%m-%d'),sym,sig,entry,sl,tp1,tp2,
+                   score,json.dumps(inds),chk,now.isoformat()))
+        conn.commit();conn.close()
+    except:pass
+
+def save_breakout(sym,entry,vol_ratio,base_days,brk_pct,score):
+    try:
+        conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+        now=datetime.now(BD_TZ)
+        c.execute('''INSERT INTO breakouts(date,symbol,entry,volume_ratio,base_days,
+                     breakout_pct,score,created_at) VALUES(?,?,?,?,?,?,?,?)''',
+                  (now.strftime('%Y-%m-%d'),sym,entry,vol_ratio,base_days,brk_pct,score,now.isoformat()))
         conn.commit();conn.close()
     except:pass
 
@@ -64,19 +80,19 @@ def get_stats():
         return{'total':0,'wins':0,'losses':0,'pending':0,'wr':0,'avg':0,'recent':[]}
 
 # ══════════════════════════════════════
-#  HELPERS
+#  MATH HELPERS
 # ══════════════════════════════════════
 def sf(txt):
     try:return float(str(txt).strip().replace(',','').replace('%','').replace('৳',''))
     except:return 0.0
 
-def ema(data,period):
-    if len(data)<period:return data[-1] if data else 0
+def ema_calc(data,period):
+    if not data or len(data)<period:return data[-1] if data else 0
     k=2/(period+1);v=sum(data[:period])/period
     for p in data[period:]:v=p*k+v*(1-k)
-    return v
+    return round(v,2)
 
-def rsi(closes,period=14):
+def rsi_calc(closes,period=14):
     if len(closes)<period+1:return 50.0
     g,l=[],[]
     for i in range(1,len(closes)):
@@ -85,61 +101,64 @@ def rsi(closes,period=14):
     if al==0:return 100.0
     return round(100-(100/(1+ag/al)),1)
 
-def macd(closes):
+def macd_calc(closes):
     if len(closes)<26:return 0,0,0
-    e12=ema(closes,12);e26=ema(closes,26)
-    ml=e12-e26;sl_=ml*0.9;hist=ml-sl_
-    return round(ml,3),round(sl_,3),round(hist,3)
+    e12=ema_calc(closes,12);e26=ema_calc(closes,26)
+    ml=e12-e26;sl=ml*0.9;hist=ml-sl
+    return round(ml,3),round(sl,3),round(hist,3)
 
-def bollinger(closes,period=20):
+def bb_calc(closes,period=20):
     if len(closes)<period:return 0,0,0
     r=closes[-period:];mid=sum(r)/period
     std=(sum((x-mid)**2 for x in r)/period)**0.5
     return round(mid+2*std,2),round(mid,2),round(mid-2*std,2)
 
-def sma(closes,period):
+def sma_calc(closes,period):
     if len(closes)<period:return closes[-1] if closes else 0
-    return sum(closes[-period:])/period
+    return round(sum(closes[-period:])/period,2)
 
 # ══════════════════════════════════════
-#  HISTORICAL DATA (Yahoo Finance)
+#  HISTORICAL DATA
 # ══════════════════════════════════════
-def get_hist(symbol,days=90):
+def get_hist(symbol,days=120):
+    """Yahoo Finance থেকে historical OHLCV"""
     try:
         sym=symbol+'.BD'
         end=int(time.time());start=end-(days*86400)
         url=f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?period1={start}&period2={end}&interval=1d"
         r=requests.get(url,headers={'User-Agent':'Mozilla/5.0'},timeout=15)
         d=r.json()['chart']['result'][0]
-        quotes=d['indicators']['quote'][0]
-        closes=[c for c in quotes.get('close',[]) if c]
-        highs=[h for h in quotes.get('high',[]) if h]
-        lows=[l for l in quotes.get('low',[]) if l]
-        vols=[v for v in quotes.get('volume',[]) if v]
-        return closes,highs,lows,vols
+        q=d['indicators']['quote'][0]
+        closes=[c for c in q.get('close',[]) if c and c>0]
+        highs =[h for h in q.get('high',[])  if h and h>0]
+        lows  =[l for l in q.get('low',[])   if l and l>0]
+        vols  =[v for v in q.get('volume',[]) if v and v>0]
+        opens =[o for o in q.get('open',[])  if o and o>0]
+        return closes,highs,lows,vols,opens
     except:
-        return[],[],[],[]
+        return[],[],[],[],[]
 
 def get_all_indicators(symbol):
-    closes,highs,lows,vols=get_hist(symbol,90)
+    closes,highs,lows,vols,opens=get_hist(symbol,120)
     if len(closes)<20:
         return{'ok':False,'rsi':50,'macd_h':0,'bb_pos':'mid',
                'ma20':0,'ma50':0,'ema9':0,'ema21':0,'trend':'neutral',
-               'avg_vol':0,'vol_spike':False,'swing_high':0,'swing_low':0}
+               'avg_vol':0,'vol_spike':False,'swing_high':0,'swing_low':0,
+               'ew_phase':'unknown','fake_break':False,
+               'candle_pattern':'unknown','prev_candles':[]}
 
-    r=rsi(closes)
-    ml,sl_,mh=macd(closes)
-    bbu,bbm,bbl=bollinger(closes)
-    ma20=sma(closes,20)
-    ma50=sma(closes,min(50,len(closes)))
-    e9=ema(closes,min(9,len(closes)))
-    e21=ema(closes,min(21,len(closes)))
+    rsi=rsi_calc(closes)
+    ml,sl_,mh=macd_calc(closes)
+    bbu,bbm,bbl=bb_calc(closes)
+    ma20=sma_calc(closes,20)
+    ma50=sma_calc(closes,min(50,len(closes)))
+    e9=ema_calc(closes,min(9,len(closes)))
+    e21=ema_calc(closes,min(21,len(closes)))
     last=closes[-1]
 
-    # BB position
-    bp='upper' if last>bbu else 'lower' if last<bbl else 'mid'
+    bb_pos='upper' if last>bbu else 'lower' if last<bbl else 'mid'
 
-    # Trend (MA alignment)
+    # Trend
     if e9>e21>ma20>ma50:trend='strong_up'
     elif e9>e21 and ma20>ma50:trend='up'
     elif e9<e21<ma20<ma50:trend='strong_down'
@@ -149,43 +168,276 @@ def get_all_indicators(symbol):
     # Volume
     avg_vol=sum(vols[-20:])/max(len(vols[-20:]),1) if vols else 0
     cur_vol=vols[-1] if vols else 0
-    vol_spike=cur_vol>avg_vol*1.5 if avg_vol>0 else False
+    vol_spike=cur_vol>avg_vol*1.8 if avg_vol>0 else False
+    vol_ratio=round(cur_vol/avg_vol,2) if avg_vol>0 else 0
 
-    # Swing High/Low (last 20 candles)
+    # Swing
     swing_high=max(highs[-20:]) if len(highs)>=20 else 0
     swing_low=min(lows[-20:]) if len(lows)>=20 else 0
 
-    # EW rough (last 5 candles trend vs previous 5)
+    # EW Phase
     ew_phase='unknown'
     if len(closes)>=10:
         rec=sum(closes[-5:])/5;old=sum(closes[-10:-5])/5
-        if last>rec>old:ew_phase='wave3_5'  # impulse up
+        if last>rec>old:ew_phase='wave3_5'
         elif last<rec<old:ew_phase='wave_down'
-        elif old>rec and last>rec:ew_phase='wave2_4_end'  # correction ending
+        elif old>rec and last>rec:ew_phase='wave2_4_end'
         else:ew_phase='neutral'
 
-    # Fake breakout detection
-    # Price above swing high but RSI not confirming
+    # Fake breakout
     fake_break=False
-    if len(highs)>=5:
-        prev_high=max(highs[-6:-1]) if len(highs)>=6 else 0
-        if last>prev_high and r>75:fake_break=True  # overbought breakout
+    if len(highs)>=6:
+        prev_high=max(highs[-6:-1])
+        if last>prev_high and rsi>75:fake_break=True
+
+    # ══ MULTI-CANDLE PATTERN DETECTION ══
+    candle_pattern='none'
+    pattern_score=0
+
+    if len(closes)>=5 and len(opens)>=5 and len(highs)>=5 and len(lows)>=5:
+        # Last 3 candles
+        c0,c1,c2=closes[-3],closes[-2],closes[-1]
+        o0,o1,o2=opens[-3],opens[-2],opens[-1]
+        h0,h1,h2=highs[-3],highs[-2],highs[-1]
+        l0,l1,l2=lows[-3],lows[-2],lows[-1]
+
+        body2=abs(c2-o2);rng2=h2-l2 if h2>l2 else 0.01
+        body1=abs(c1-o1);rng1=h1-l1 if h1>l1 else 0.01
+        body0=abs(c0-o0);rng0=h0-l0 if h0>l0 else 0.01
+
+        bull2=c2>o2;bull1=c1>o1;bull0=c0>o0
+        uw2=(h2-c2)/rng2 if bull2 else (h2-o2)/rng2
+        lw2=(o2-l2)/rng2 if bull2 else (c2-l2)/rng2
+
+        # Hammer (আগে downtrend ছিল কিনা check করি)
+        prev_trend_down=closes[-5]>closes[-3] if len(closes)>=5 else False
+        if lw2>0.5 and uw2<0.1 and bull2 and prev_trend_down:
+            candle_pattern='Real Hammer 🔨';pattern_score=5
+        elif lw2>0.5 and uw2<0.1 and bull2:
+            candle_pattern='Hammer 🔨';pattern_score=3
+
+        # Bullish Engulfing
+        elif not bull1 and bull2 and c2>o1 and o2<c1 and body2>body1:
+            candle_pattern='Bullish Engulfing 🕯️';pattern_score=5
+
+        # Morning Star (3 candle)
+        elif not bull0 and body1<body0*0.3 and bull2 and c2>((c0+o0)/2):
+            candle_pattern='Morning Star ⭐';pattern_score=6
+
+        # Piercing Line
+        elif not bull1 and bull2 and o2<l1 and c2>((c1+o1)/2):
+            candle_pattern='Piercing Line 📈';pattern_score=4
+
+        # Shooting Star (bearish)
+        elif uw2>0.5 and lw2<0.1 and not bull2 and not prev_trend_down:
+            candle_pattern='Shooting Star 💫';pattern_score=-5
+
+        # Evening Star (3 candle bearish)
+        elif bull0 and body1<body0*0.3 and not bull2 and c2<((c0+o0)/2):
+            candle_pattern='Evening Star ⭐';pattern_score=-6
+
+        # Bearish Engulfing
+        elif bull1 and not bull2 and o2>c1 and c2<o1 and body2>body1:
+            candle_pattern='Bearish Engulfing 📉';pattern_score=-5
+
+        # Doji (indecision)
+        elif body2<rng2*0.1 and rng2>0:
+            candle_pattern='Doji ⚖️';pattern_score=0
+
+        # Three White Soldiers (3 consecutive bull)
+        elif bull0 and bull1 and bull2 and c2>c1>c0 and body2>rng2*0.5:
+            candle_pattern='3 White Soldiers 🚀';pattern_score=7
+
+        # Three Black Crows (3 consecutive bear)
+        elif not bull0 and not bull1 and not bull2 and c2<c1<c0:
+            candle_pattern='3 Black Crows 💀';pattern_score=-7
+
+        # Strong Bullish (simple)
+        elif bull2 and body2>rng2*0.6 and c2==h2:
+            candle_pattern='Strong Bull Close ✅';pattern_score=2
+
+    # Base detection (consolidation)
+    base_days=0
+    if len(highs)>=30 and len(lows)>=30:
+        recent_highs=highs[-30:]
+        recent_lows=lows[-30:]
+        rng_30=max(recent_highs)-min(recent_lows)
+        avg_30=sum(closes[-30:])/30
+        if avg_30>0 and rng_30/avg_30<0.20:  # 20% range = consolidation
+            base_days=30
+        elif avg_30>0 and rng_30/avg_30<0.15:
+            base_days=45
 
     return{
-        'ok':True,'rsi':r,'macd':ml,'macd_sig':sl_,'macd_h':mh,
-        'bb_upper':bbu,'bb_mid':bbm,'bb_lower':bbl,'bb_pos':bp,
-        'ma20':round(ma20,2),'ma50':round(ma50,2),
-        'ema9':round(e9,2),'ema21':round(e21,2),
-        'trend':trend,'avg_vol':int(avg_vol),'vol_spike':vol_spike,
-        'swing_high':round(swing_high,2),'swing_low':round(swing_low,2),
-        'ew_phase':ew_phase,'fake_break':fake_break,'closes':closes,
+        'ok':True,'rsi':rsi,'macd':ml,'macd_sig':sl_,'macd_h':mh,
+        'bb_upper':bbu,'bb_mid':bbm,'bb_lower':bbl,'bb_pos':bb_pos,
+        'ma20':ma20,'ma50':ma50,'ema9':e9,'ema21':e21,
+        'trend':trend,'avg_vol':int(avg_vol),'cur_vol':int(cur_vol),
+        'vol_spike':vol_spike,'vol_ratio':vol_ratio,
+        'swing_high':swing_high,'swing_low':swing_low,
+        'ew_phase':ew_phase,'fake_break':fake_break,
+        'candle_pattern':candle_pattern,'pattern_score':pattern_score,
+        'base_days':base_days,'closes':closes,'highs':highs,'lows':lows,
     }
+
+# ══════════════════════════════════════
+#  BREAKOUT SCANNER
+# ══════════════════════════════════════
+def scan_breakouts(stocks):
+    """
+    Parabolic move এর আগের সংকেত ধরে:
+    - দীর্ঘ consolidation (base) থেকে breakout
+    - Volume ৩x+ বৃদ্ধি
+    - MA crossover
+    - RSI ৫০ cross করে উপরে
+    - Price range এর উপরে close
+    """
+    candidates=[]
+    for s in stocks:
+        if s['ltp']<MIN_PRICE or s['volume']<MIN_VOLUME:continue
+        ind=get_all_indicators(s['symbol'])
+        if not ind['ok']:continue
+
+        score=0;signals=[];reasons=[]
+        ltp=s['ltp'];chg=s['change']
+        vol=s['volume'];avg_vol=ind['avg_vol']
+        vol_ratio=ind['vol_ratio']
+
+        # ══ 1. VOLUME BREAKOUT (সবচেয়ে গুরুত্বপূর্ণ) ══
+        if vol_ratio>=5:
+            score+=8;signals.append(f"Vol {vol_ratio}x 🔥🔥🔥🔥")
+            reasons.append(f"Volume গড়ের {vol_ratio}x — institutional accumulation শুরু")
+        elif vol_ratio>=3:
+            score+=6;signals.append(f"Vol {vol_ratio}x 🔥🔥🔥")
+            reasons.append(f"Volume গড়ের {vol_ratio}x — strong buying interest")
+        elif vol_ratio>=2:
+            score+=4;signals.append(f"Vol {vol_ratio}x 🔥🔥")
+            reasons.append(f"Volume গড়ের {vol_ratio}x — above average")
+        elif vol_ratio>=1.5:
+            score+=2;signals.append(f"Vol {vol_ratio}x 🔥")
+        else:
+            continue  # Volume না বাড়লে breakout নয়
+
+        # ══ 2. PRICE BREAKOUT from base ══
+        if ind['base_days']>0:
+            score+=5;signals.append(f"Base {ind['base_days']}d 📦")
+            reasons.append(f"{ind['base_days']} দিনের consolidation শেষে breakout — parabolic move সম্ভব")
+
+        # Breakout from swing high
+        swing_h=ind['swing_high']
+        if swing_h>0 and ltp>=swing_h*0.98:
+            brk_pct=round((ltp-swing_h)/swing_h*100,1)
+            if brk_pct>=0:
+                score+=4;signals.append(f"Swing Break +{brk_pct}% 💥")
+                reasons.append(f"২০ দিনের swing high ৳{swing_h} break করেছে")
+            elif brk_pct>=-2:
+                score+=2;signals.append(f"Near Swing High ⚡")
+
+        # ══ 3. MA/EMA CROSSOVER ══
+        tr=ind['trend']
+        if tr=='strong_up':
+            score+=5;signals.append("EMA9>EMA21>MA20>MA50 🚀")
+            reasons.append("Perfect MA alignment — strong uptrend confirmation")
+        elif tr=='up':
+            score+=3;signals.append("Trend Up ↑")
+            reasons.append("MA bullish alignment")
+
+        # EMA crossover (fresh)
+        e9=ind['ema9'];e21=ind['ema21']
+        if len(ind['closes'])>=2:
+            prev_closes=ind['closes'][:-1]
+            if len(prev_closes)>=9:
+                prev_e9=ema_calc(prev_closes,9)
+                if prev_e9<=e21 and e9>e21:  # Fresh crossover
+                    score+=4;signals.append("EMA Cross 🔀 NEW")
+                    reasons.append("EMA9 সবেমাত্র EMA21 cross করেছে — শক্তিশালী সংকেত")
+
+        # ══ 4. RSI MOMENTUM ══
+        rsi=ind['rsi']
+        if 50<=rsi<=65:
+            score+=4;signals.append(f"RSI:{rsi} Breakout Zone")
+            reasons.append(f"RSI {rsi} — ৫০ cross করে উপরে, overbought নয়, আরো space আছে")
+        elif 45<=rsi<50:
+            score+=2;signals.append(f"RSI:{rsi} Near 50")
+        elif rsi>75:
+            score-=3;signals.append(f"RSI:{rsi} OB ⚠️")
+            reasons.append("RSI overbought — entry দেরি হয়ে গেছে")
+
+        # ══ 5. MACD CONFIRMATION ══
+        if ind['macd_h']>0 and ind['macd']>ind['macd_sig']:
+            score+=3;signals.append("MACD Bullish ✅")
+            reasons.append("MACD bullish crossover — momentum confirm")
+        elif ind['macd_h']>0:
+            score+=1;signals.append("MACD ↑")
+
+        # ══ 6. CANDLE PATTERN ══
+        cp=ind['candle_pattern'];ps=ind['pattern_score']
+        if ps>=4:
+            score+=ps;signals.append(cp)
+            reasons.append(f"Candle: {cp} — powerful reversal/continuation signal")
+        elif ps>0:
+            score+=ps;signals.append(cp)
+        elif ps<0:
+            score+=ps;signals.append(cp)
+
+        # ══ 7. BB POSITION ══
+        if ind['bb_pos']=='lower':
+            score+=2;signals.append("BB Lower 🟢")
+            reasons.append("Bollinger Band lower — oversold, bounce zone")
+        elif ind['bb_pos']=='upper' and vol_ratio>3:
+            score+=1;signals.append("BB Upper (vol confirm)")
+            reasons.append("BB upper with high volume — strong breakout")
+
+        # ══ 8. EW PHASE ══
+        ep=ind['ew_phase']
+        if ep=='wave2_4_end':
+            score+=5;signals.append("EW Wave 3/5 শুরু 🌊")
+            reasons.append("Elliott Wave correction শেষ — সবচেয়ে শক্তিশালী impulse আসছে")
+        elif ep=='wave3_5':
+            score+=2;signals.append("EW Impulse ↑")
+
+        # ══ 9. PRICE CHANGE ══
+        if 0<chg<=5:
+            score+=1;signals.append(f"+{chg:.1f}%")
+        elif chg>5:
+            score+=0;signals.append(f"+{chg:.1f}% (high)")  # বেশি change মানে দেরি হয়েছে
+        elif chg<0:
+            score-=1
+
+        # ══ FAKE BREAKOUT CHECK ══
+        if ind['fake_break']:
+            score-=4;signals.append("⚠️ FAKE BREAK")
+            reasons.append("Fake breakout সম্ভাবনা — RSI overbought + swing high near")
+
+        # Minimum score threshold
+        if score<8:continue
+
+        # TP/SL
+        sl=round(ind['swing_low']*0.99 if ind['swing_low']>0 else ltp*0.93,2)
+        risk=ltp-sl
+        if risk<=0:risk=ltp*0.05
+        tp1=round(max(ltp*(1+TP1_MIN),ltp+risk*2),2)
+        tp2=round(max(ltp*(1+TP2_MIN),ltp+risk*4),2)
+        tp3=round(max(ltp*1.50,ltp+risk*6),2)  # Parabolic target
+
+        save_breakout(s['symbol'],ltp,vol_ratio,ind['base_days'],
+                     round((ltp-swing_h)/swing_h*100,1) if swing_h>0 else 0,score)
+
+        candidates.append({
+            **s,'score':score,'signals':signals,'reasons':reasons,
+            'ind':ind,'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3,
+            'vol_ratio':vol_ratio,'base_days':ind['base_days'],
+            'candle':ind['candle_pattern'],'rsi':rsi,'trend':tr,
+        })
+
+    candidates.sort(key=lambda x:x['score'],reverse=True)
+    return candidates[:10]
 
 # ══════════════════════════════════════
 #  DSE LIVE DATA
 # ══════════════════════════════════════
 def fetch_stocks():
-    log.info("DSE data fetch শুরু...")
+    log.info("DSE data fetch...")
     url="https://www.dsebd.org/latest_share_price_scroll_by_value.php"
     try:
         r=requests.get(url,headers=HEADERS,timeout=30);r.raise_for_status()
@@ -220,8 +472,7 @@ def fetch_stocks():
         seen=set();unique=[]
         for s in stocks:
             if s['symbol'] not in seen:seen.add(s['symbol']);unique.append(s)
-        log.info(f"✅ {len(unique)} stocks fetched")
-        return unique
+        log.info(f"✅ {len(unique)} stocks");return unique
     except Exception as e:
         log.error(f"Fetch error:{e}");return[]
 
@@ -238,7 +489,7 @@ def get_dsex():
     except:return "N/A"
 
 # ══════════════════════════════════════
-#  COMPREHENSIVE ANALYSIS ENGINE
+#  STANDARD SIGNAL ANALYSIS
 # ══════════════════════════════════════
 def analyze(stocks,use_hist=False):
     scored=[]
@@ -246,337 +497,224 @@ def analyze(stocks,use_hist=False):
         ltp=s['ltp'];hi=s['high'];lo=s['low']
         chg=s['change'];vol=s['volume'];yd=s['yday']
         rng=hi-lo if hi>lo else ltp*0.01
-        cp=(ltp-lo)/rng   # close position 0-1
-        uw=(hi-ltp)/rng   # upper wick
-        lw=(ltp-lo)/rng   # lower wick
+        cp=(ltp-lo)/rng;uw=(hi-ltp)/rng;lw=(ltp-lo)/rng
+        score=0.0;tags=[];inds=[];warnings=[]
 
-        score=0.0;tags=[];reasons=[];inds=[]
-        warnings=[]
-
-        # ══ 1. CANDLESTICK PATTERNS ══
-        # Hammer (bullish reversal)
+        # Candle (single day — basic)
         if lw>0.5 and uw<0.1 and cp>0.6:
-            score+=4;tags.append("Hammer 🔨");reasons.append("Hammer: বুলিশ রিভার্সাল")
-            inds.append('hammer')
-        # Bullish Engulfing (need prev candle info — approximate)
+            score+=2;tags.append("Hammer Shape");inds.append('hammer')
         elif lw>0.35 and cp>0.7 and chg>1:
-            score+=3;tags.append("Bullish Engulf 🕯️");reasons.append("Bullish candle: strong close")
-            inds.append('bull_engulf')
-        # Inverted Hammer
-        elif uw>0.4 and lw<0.1 and cp>0.5 and chg>0:
-            score+=2;tags.append("Inv Hammer");inds.append('inv_hammer')
-        # Shooting Star (bearish)
+            score+=2;tags.append("Bullish Close");inds.append('bull')
         elif uw>0.5 and lw<0.1 and cp<0.4:
-            score-=4;tags.append("Shooting Star 💫");warnings.append("Shooting Star: বেয়ারিশ")
-            inds.append('shooting_star')
-        # Bearish Engulfing
-        elif uw>0.35 and cp<0.3 and chg<-1:
-            score-=3;tags.append("Bearish Candle 📉");inds.append('bear_engulf')
-        # Doji (indecision)
-        elif abs(cp-0.5)<0.08 and lw>0.2 and uw>0.2:
-            tags.append("Doji ⚖️");warnings.append("Doji: মার্কেট অনিশ্চিত")
-            inds.append('doji')
-        # Morning Star approximation
-        elif lw>0.3 and cp>0.55 and chg>2:
-            score+=2;tags.append("Morning Star ⭐");inds.append('morning_star')
+            score-=3;tags.append("Bear Shape");inds.append('bear')
 
-        # ══ 2. PRICE CHANGE ══
-        if 2<chg<=5:
-            score+=2;tags.append(f"+{chg:.1f}% 📈")
-            reasons.append(f"দাম {chg:.1f}% বেড়েছে")
-        elif 5<chg<=MAX_CHANGE:
-            score+=1;tags.append(f"+{chg:.1f}%")
-            warnings.append("বেশি change — circuit সন্দেহ")
-        elif -5<=chg<-2:
-            score-=2;tags.append(f"{chg:.1f}% 📉")
-        elif chg<-5:
-            score-=3;tags.append(f"{chg:.1f}% 💥")
+        # Change
+        if 1.5<chg<=5:score+=2;tags.append(f"+{chg:.1f}%")
+        elif chg>5:score+=1;tags.append(f"+{chg:.1f}%")
+        elif chg<-3:score-=2;tags.append(f"{chg:.1f}%")
+        elif chg<-1:score-=1;tags.append(f"{chg:.1f}%")
 
-        # ══ 3. VOLUME ANALYSIS ══
-        if vol>3000000:
-            score+=4;tags.append(f"Vol:{vol//1000}K 🔥🔥🔥")
-            reasons.append(f"অসাধারণ volume {vol:,} — institutional interest")
-        elif vol>1000000:
-            score+=3;tags.append(f"Vol:{vol//1000}K 🔥🔥")
-            reasons.append(f"High volume {vol:,}")
-        elif vol>300000:
-            score+=2;tags.append(f"Vol:{vol//1000}K 🔥")
-        elif vol>100000:
-            score+=1;tags.append(f"Vol:{vol//1000}K")
-        else:
-            tags.append(f"Vol:{vol//1000}K")
-            warnings.append("Volume কম — সতর্ক থাকুন")
+        # Volume
+        if vol>3000000:score+=4;tags.append(f"Vol:{vol//1000}K 🔥🔥🔥");inds.append('vol_high')
+        elif vol>1000000:score+=3;tags.append(f"Vol:{vol//1000}K 🔥🔥");inds.append('vol_med')
+        elif vol>300000:score+=2;tags.append(f"Vol:{vol//1000}K 🔥");inds.append('vol_low')
+        elif vol>100000:score+=1;tags.append(f"Vol:{vol//1000}K")
+        else:tags.append(f"Vol:{vol//1000}K")
 
-        # ══ 4. FIBONACCI (Daily Range) ══
-        f786=lo+rng*0.786;f618=lo+rng*0.618
-        f500=lo+rng*0.500;f382=lo+rng*0.382;f236=lo+rng*0.236
-        fib_hit=False
-        for fval,flbl in[(f618,'0.618'),(f382,'0.382'),(f786,'0.786'),(f500,'0.500'),(f236,'0.236')]:
-            if ltp>0 and abs(ltp-fval)/ltp<0.015:
-                sc=2 if flbl in('0.618','0.382') else 1
-                score+=sc;tags.append(f"Fib {flbl} ✨")
-                reasons.append(f"Fibonacci {flbl} সাপোর্টে")
-                fib_hit=True;break
+        # Fib
+        f618=lo+rng*0.618;f382=lo+rng*0.382
+        if ltp>0:
+            if abs(ltp-f618)/ltp<0.015:score+=2;tags.append("Fib 0.618 ✨");inds.append('fib618')
+            elif abs(ltp-f382)/ltp<0.015:score+=1;tags.append("Fib 0.382")
 
-        # ══ 5. GAP ANALYSIS ══
+        # Gap
         if yd>0:
             gap=(ltp-yd)/yd*100
-            if gap>2:score+=1;tags.append("Gap Up ⬆️");reasons.append("Gap Up")
-            elif gap>1:score+=0.5;tags.append("Gap Up ⬆️")
-            elif gap<-2:score-=1;tags.append("Gap Down ⬇️")
+            if gap>1.5:score+=1;tags.append("Gap Up ⬆️")
+            elif gap<-1.5:score-=1;tags.append("Gap Down ⬇️")
 
-        # ══ 6. SMC — Structure ══
-        # Basic: close near high = bullish structure
-        if cp>0.8 and vol>200000:
-            score+=2;tags.append("SMC: Strong 💪")
-            reasons.append("SMC: Price closed near high with volume — institutional buying")
-            inds.append('smc_strong')
-        elif cp<0.2 and vol>200000:
-            score-=2;tags.append("SMC: Weak ⚠️")
-            warnings.append("SMC: Price closed near low — institutional selling")
-
-        # ══ 7. HISTORICAL INDICATORS ══
-        ind={'ok':False,'rsi':50,'trend':'neutral','ew_phase':'unknown','fake_break':False}
+        # Historical
+        ind={'ok':False,'rsi':50,'trend':'neutral','ew_phase':'unknown',
+             'fake_break':False,'candle_pattern':'N/A','pattern_score':0}
         if use_hist:
             ind=get_all_indicators(s['symbol'])
             if ind['ok']:
-                r_val=ind['rsi']
-
+                rsi=ind['rsi']
                 # RSI
-                if r_val<30:
-                    score+=4;tags.append(f"RSI:{r_val} Oversold 🟢")
-                    reasons.append(f"RSI {r_val} — heavily oversold, bounce likely")
-                    inds.append('rsi_oversold')
-                elif 30<=r_val<45:
-                    score+=3;tags.append(f"RSI:{r_val} 🟢")
-                    reasons.append(f"RSI {r_val} — good buy zone")
-                    inds.append('rsi_good')
-                elif 45<=r_val<60:
-                    score+=1;tags.append(f"RSI:{r_val}")
-                    inds.append('rsi_neutral')
-                elif 60<=r_val<75:
-                    tags.append(f"RSI:{r_val}")
-                elif r_val>=75:
-                    score-=3;tags.append(f"RSI:{r_val} OB ⚠️")
-                    warnings.append(f"RSI {r_val} — overbought, exit risk")
-                    inds.append('rsi_overbought')
-
+                if rsi<30:score+=4;tags.append(f"RSI:{rsi} Oversold 🟢");inds.append('rsi_os')
+                elif 30<=rsi<45:score+=3;tags.append(f"RSI:{rsi} 🟢");inds.append('rsi_good')
+                elif 45<=rsi<60:score+=1;tags.append(f"RSI:{rsi}")
+                elif rsi>=75:score-=3;tags.append(f"RSI:{rsi} OB⚠️");warnings.append(f"RSI {rsi} overbought")
+                else:tags.append(f"RSI:{rsi}")
                 # MACD
-                mh=ind['macd_h']
-                if mh>0 and ind['macd']>ind['macd_sig']:
-                    score+=3;tags.append("MACD ↑ 🟢")
-                    reasons.append("MACD bullish crossover — momentum up")
-                    inds.append('macd_bull')
-                elif mh>0:
-                    score+=1;tags.append("MACD ↑")
-                elif mh<0 and ind['macd']<ind['macd_sig']:
+                if ind['macd_h']>0 and ind['macd']>ind['macd_sig']:
+                    score+=3;tags.append("MACD ↑ 🟢");inds.append('macd_bull')
+                elif ind['macd_h']<0 and ind['macd']<ind['macd_sig']:
                     score-=3;tags.append("MACD ↓ 🔴")
-                    warnings.append("MACD bearish — momentum down")
-                    inds.append('macd_bear')
-                elif mh<0:
-                    score-=1;tags.append("MACD ↓")
-
-                # Bollinger Bands
-                bp=ind['bb_pos']
-                if bp=='lower':
-                    score+=3;tags.append("BB Lower 🟢")
-                    reasons.append("BB Lower band — oversold territory, bounce zone")
-                    inds.append('bb_lower')
-                elif bp=='upper':
-                    score-=2;tags.append("BB Upper ⚠️")
-                    warnings.append("BB Upper band — overbought")
-                    inds.append('bb_upper')
-                else:
-                    tags.append("BB Mid")
-
-                # MA/EMA Trend
+                # BB
+                if ind['bb_pos']=='lower':score+=3;tags.append("BB Lower 🟢");inds.append('bb_low')
+                elif ind['bb_pos']=='upper':score-=2;tags.append("BB Upper ⚠️")
+                # Trend
                 tr=ind['trend']
-                if tr=='strong_up':
-                    score+=4;tags.append("Trend: ↑↑ 🚀")
-                    reasons.append("EMA9>EMA21>MA20>MA50 — perfect bullish alignment")
-                    inds.append('trend_strong_up')
-                elif tr=='up':
-                    score+=2;tags.append("Trend: ↑")
-                    reasons.append("Bullish trend — MA aligned")
-                    inds.append('trend_up')
-                elif tr=='strong_down':
-                    score-=4;tags.append("Trend: ↓↓")
-                    warnings.append("Strong downtrend — avoid")
-                elif tr=='down':
-                    score-=2;tags.append("Trend: ↓")
-
-                # EW Phase
+                if tr=='strong_up':score+=5;tags.append("Trend ↑↑ 🚀");inds.append('trend_sup')
+                elif tr=='up':score+=2;tags.append("Trend ↑")
+                elif tr=='strong_down':score-=4;tags.append("Trend ↓↓")
+                elif tr=='down':score-=2;tags.append("Trend ↓")
+                # Multi-candle
+                cp_=ind['candle_pattern'];ps=ind['pattern_score']
+                if ps>=4:score+=ps;tags.append(cp_);inds.append('candle_bull')
+                elif ps>0:score+=ps;tags.append(cp_)
+                elif ps<=-4:score+=ps;tags.append(cp_);inds.append('candle_bear')
+                elif ps<0:score+=ps;tags.append(cp_)
+                # EW
                 ep=ind['ew_phase']
-                if ep=='wave2_4_end':
-                    score+=4;tags.append("EW: Wave 3/5 শুরু 🌊")
-                    reasons.append("Elliott Wave 2/4 শেষ — সবচেয়ে শক্তিশালী impulse আসছে")
-                    inds.append('ew_wave345')
-                elif ep=='wave3_5':
-                    score+=2;tags.append("EW: Impulse ↑")
-                    reasons.append("EW impulse wave চলছে")
-                elif ep=='wave_down':
-                    score-=2;tags.append("EW: Down ↓")
+                if ep=='wave2_4_end':score+=4;tags.append("EW W2/4 End 🌊");inds.append('ew_end')
+                elif ep=='wave3_5':score+=2;tags.append("EW Impulse")
+                # Fake break
+                if ind['fake_break']:score-=4;tags.append("FakeBreak ⚠️");warnings.append("Fake breakout risk")
 
-                # Volume Spike (historical)
-                if ind['vol_spike']:
-                    score+=2;tags.append("Vol Spike 🔥")
-                    reasons.append("Volume spike — smart money entry")
-                    inds.append('vol_spike')
+        s['ind']=ind;s['inds']=inds;s['warnings']=warnings
 
-                # Fake Breakout Detection
-                if ind['fake_break']:
-                    score-=3
-                    warnings.append("⚠️ FAKE BREAKOUT সম্ভাবনা — RSI overbought + near swing high")
-                    tags.append("FakeBreak ⚠️")
-                    inds.append('fake_break')
-
-                # Near Swing Low (SMC Order Block)
-                if ind['swing_low']>0 and abs(ltp-ind['swing_low'])/ltp<0.03:
-                    score+=2;tags.append("Near OB 📦")
-                    reasons.append(f"SMC Order Block zone কাছে (৳{ind['swing_low']})")
-                    inds.append('order_block')
-
-        s['ind']=ind;s['inds']=inds
-        s['reasons']=reasons;s['warnings']=warnings
-
-        # ══ SIGNAL DECISION ══
-        if score>=12:   signal="STRONG BUY 🟢🟢"
-        elif score>=7:  signal="BUY 🟢"
+        # Signal
+        if score>=12:signal="STRONG BUY 🟢🟢"
+        elif score>=7:signal="BUY 🟢"
         elif score<=-12:signal="STRONG SELL 🔴🔴"
-        elif score<=-7: signal="SELL 🔴"
-        else:           signal="HOLD 🟡"
+        elif score<=-7:signal="SELL 🔴"
+        else:signal="HOLD 🟡"
 
-        # ══ TP/SL WITH MINIMUM TARGETS ══
-        sl=round(lo*0.993,2)  # SL below day low
-        risk=ltp-sl
+        sl=round(lo*0.993,2);risk=ltp-sl
         if risk<=0:risk=ltp*0.04
-
-        # Minimum TP1=8%, TP2=20%
-        tp1=round(max(ltp*(1+TP1_MIN), ltp+risk*2.5),2)
-        tp2=round(max(ltp*(1+TP2_MIN), ltp+risk*4.5),2)
-
-        s.update({'score':round(score,1),'signal':signal,'tags':tags,
-                  'reasons':reasons,'warnings':warnings,
-                  'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2})
+        tp1=round(max(ltp*(1+TP1_MIN),ltp+risk*2.5),2)
+        tp2=round(max(ltp*(1+TP2_MIN),ltp+risk*4.5),2)
+        s.update({'score':round(score,1),'signal':signal,'tags':tags,'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2})
         scored.append(s)
-
     scored.sort(key=lambda x:x['score'],reverse=True)
     return scored
 
 # ══════════════════════════════════════
-#  EW DEEP SCANNER
-# ══════════════════════════════════════
-def find_ew(stocks):
-    out=[]
-    for s in stocks:
-        ind=s.get('ind',{})
-        if not ind.get('ok'):continue
-        ep=ind.get('ew_phase','')
-        if ep not in('wave2_4_end','wave3_5'):continue
-        if s['score']<5:continue
-        hi,lo,ltp=s['high'],s['low'],s['ltp']
-        if hi<=lo:continue
-        rng=hi-lo
-        f618=lo+rng*0.618;f382=lo+rng*0.382
-        n618=abs(ltp-f618)/ltp<0.03;n382=abs(ltp-f382)/ltp<0.03
-        fib_txt=f"Fib {'0.618' if n618 else '0.382' if n382 else 'zone'}"
-        tr=ind.get('trend','neutral')
-        rsi_v=ind.get('rsi',50)
-        desc=(f"EW {ep.replace('_',' ').title()} | {fib_txt} | "
-              f"RSI:{rsi_v} | Trend:{tr} | MACD:{'↑' if ind.get('macd_h',0)>0 else '↓'}")
-        s['ew_note']=desc
-        out.append(s)
-    return out[:6]
-
-# ══════════════════════════════════════
 #  AI ANALYSIS
 # ══════════════════════════════════════
-def ai_analysis(buys,ew_list,sells,dsex,stats):
-    today=datetime.now(BD_TZ).strftime("%d %B %Y")
-    buy_txt=""
-    for s in buys[:5]:
-        ind=s.get('ind',{})
-        buy_txt+=(f"{s['symbol']}: ৳{s['ltp']} ({s['change']:+.1f}%) Vol:{s['volume']:,} "
-                  f"Score:{s['score']} RSI:{ind.get('rsi','-')} Trend:{ind.get('trend','-')} "
-                  f"EW:{ind.get('ew_phase','-')}\n"
-                  f"  Reasons: {', '.join(s.get('reasons',[])[:3])}\n"
-                  f"  Warnings: {', '.join(s.get('warnings',[])[:2])}\n")
-    ew_txt="\n".join([f"• {s['symbol']}: {s.get('ew_note','')}" for s in ew_list[:4]])
-    sell_txt="\n".join([f"• {s['symbol']}: ৳{s['ltp']} ({s['change']:+.1f}%) Score:{s['score']}" for s in sells[:3]])
-
-    prompt=(
-        f"তুমি DSE Bangladesh এর একজন professional Technical Analyst। "
-        f"তারিখ: {today} | DSEX: {dsex} | Bot Win Rate: {stats['wr']}%\n\n"
-        f"=== BUY সিগনাল ===\n{buy_txt}\n"
-        f"=== EW Wave Candidates ===\n{ew_txt}\n"
-        f"=== SELL সিগনাল ===\n{sell_txt}\n\n"
-        f"নিচের format এ বাংলায় বিশ্লেষণ দাও:\n"
-        f"1. আজকের মার্কেট সামগ্রিক অবস্থা (২ লাইন)\n"
-        f"2. প্রতিটি BUY stock এর জন্য: কেন কিনবেন, কী risk, কখন exit (২-৩ লাইন)\n"
-        f"3. আজকের কৌশল ও পরামর্শ (২ লাইন)\n"
-        f"সহজ বাংলায়, professional tone।"
-    )
+def ai_chat(prompt_text):
     try:
         client=anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        resp=client.messages.create(model="claude-sonnet-4-20250514",max_tokens=700,
-                                    messages=[{"role":"user","content":prompt}])
+        resp=client.messages.create(model="claude-sonnet-4-20250514",max_tokens=600,
+                                    messages=[{"role":"user","content":prompt_text}])
         return resp.content[0].text
     except Exception as e:
-        return f"⚠️ AI বিশ্লেষণ পাওয়া যায়নি: {str(e)[:100]}"
+        return f"⚠️ AI: {str(e)[:80]}"
+
+def ai_breakout_analysis(candidates,dsex):
+    today=datetime.now(BD_TZ).strftime("%d %B %Y")
+    txt=""
+    for s in candidates[:4]:
+        txt+=(f"{s['symbol']}: ৳{s['ltp']} ({s['change']:+.1f}%) "
+              f"Vol:{s['vol_ratio']}x Score:{s['score']}\n"
+              f"  Signals: {', '.join(s['signals'][:4])}\n"
+              f"  Reasons: {'; '.join(s['reasons'][:2])}\n")
+    prompt=(
+        f"তুমি DSE Bangladesh expert analyst। তারিখ: {today} | DSEX: {dsex}\n\n"
+        f"নিচের স্টকগুলো Breakout Scanner এ ধরা পড়েছে — এগুলো parabolic move এর শুরুতে থাকতে পারে:\n\n"
+        f"{txt}\n"
+        f"প্রতিটির জন্য বাংলায় ২-৩ লাইনে বলো:\n"
+        f"১. কেন এটা breakout candidate\n"
+        f"২. কতটুকু বাড়তে পারে (realistic estimate)\n"
+        f"৩. কী হলে trade cancel করবেন\n\n"
+        f"শেষে ২ লাইনে overall market outlook।"
+    )
+    return ai_chat(prompt)
+
+def ai_signal_analysis(buys,ew_list,sells,dsex,stats):
+    today=datetime.now(BD_TZ).strftime("%d %B %Y")
+    txt=""
+    for s in buys[:4]:
+        ind=s.get('ind',{})
+        txt+=(f"{s['symbol']}: ৳{s['ltp']} ({s['change']:+.1f}%) Vol:{s['volume']:,} "
+              f"Score:{s['score']} RSI:{ind.get('rsi','-')} Trend:{ind.get('trend','-')}\n"
+              f"  Pattern:{ind.get('candle_pattern','N/A')} EW:{ind.get('ew_phase','-')}\n")
+    prompt=(
+        f"তুমি DSE expert। তারিখ:{today} DSEX:{dsex} Bot WinRate:{stats['wr']}%\n\n"
+        f"BUY:\n{txt}\n"
+        f"প্রতিটির জন্য ২ লাইনে বাংলায়: কেন কিনবেন, কী risk। শেষে ৩ লাইনে market অবস্থা।"
+    )
+    return ai_chat(prompt)
 
 # ══════════════════════════════════════
-#  MESSAGE FORMAT
+#  MESSAGE BUILDERS
 # ══════════════════════════════════════
-def fmt_stock(s,show_detail=True):
-    msg=""
-    ind=s.get('ind',{})
-    rsi_v=ind.get('rsi','-') if ind.get('ok') else '-'
-    tr=ind.get('trend','-') if ind.get('ok') else '-'
-    ep=ind.get('ew_phase','-') if ind.get('ok') else '-'
+def fmt_breakout(s):
     tp1_pct=round((s['tp1']-s['ltp'])/s['ltp']*100,1)
     tp2_pct=round((s['tp2']-s['ltp'])/s['ltp']*100,1)
-    fb=" ⚠️FakeBreak" if ind.get('fake_break') else ""
-    msg+=f"*{s['symbol']}*{fb} — {s['signal']} (Score:{s['score']})\n"
-    msg+=f"💰 `৳{s['ltp']}` ({s['change']:+.1f}%) | Vol:{s['volume']:,}\n"
-    msg+=f"H:`{s['high']}` L:`{s['low']}`\n"
-    if rsi_v!='-':msg+=f"📊 RSI:`{rsi_v}` | Trend:`{tr}` | EW:`{ep}`\n"
+    tp3_pct=round((s['tp3']-s['ltp'])/s['ltp']*100,1)
+    msg=f"🚀 *{s['symbol']}* (Score:{s['score']})\n"
+    msg+=f"💰 `৳{s['ltp']}` ({s['change']:+.1f}%) | Vol:{s['volume']:,} ({s['vol_ratio']}x avg)\n"
+    msg+=f"📊 RSI:`{s['rsi']}` | Trend:`{s['trend']}` | Candle:`{s['candle']}`\n"
+    if s['base_days']>0:msg+=f"📦 Base: {s['base_days']} দিন consolidation\n"
     msg+=f"📥 Entry:`৳{s['entry']}` SL:`৳{s['sl']}`\n"
-    msg+=f"🎯 TP1:`৳{s['tp1']}` _(+{tp1_pct}%)_ TP2:`৳{s['tp2']}` _(+{tp2_pct}%)_\n"
-    msg+=f"🏷 {' · '.join(s['tags'][:5])}\n"
-    if show_detail and s.get('warnings'):
-        msg+=f"⚠️ {' | '.join(s['warnings'][:2])}\n"
+    msg+=f"🎯 TP1:`৳{s['tp1']}` _(+{tp1_pct}%)_\n"
+    msg+=f"🎯 TP2:`৳{s['tp2']}` _(+{tp2_pct}%)_\n"
+    msg+=f"🎯 TP3:`৳{s['tp3']}` _(+{tp3_pct}%)_ ← Parabolic\n"
+    msg+=f"🏷 {' · '.join(s['signals'][:5])}\n"
+    if s.get('reasons'):msg+=f"💡 _{s['reasons'][0]}_\n"
     msg+="\n"
     return msg
 
-def build_msg(scored,dsex):
+def fmt_signal(s):
+    ind=s.get('ind',{})
+    rsi=ind.get('rsi','-') if ind.get('ok') else '-'
+    tr=ind.get('trend','-') if ind.get('ok') else '-'
+    cp=ind.get('candle_pattern','N/A') if ind.get('ok') else 'N/A'
+    tp1_pct=round((s['tp1']-s['ltp'])/s['ltp']*100,1)
+    tp2_pct=round((s['tp2']-s['ltp'])/s['ltp']*100,1)
+    msg=f"*{s['symbol']}* — {s['signal']} (Score:{s['score']})\n"
+    msg+=f"💰 `৳{s['ltp']}` ({s['change']:+.1f}%) | Vol:{s['volume']:,}\n"
+    msg+=f"📊 RSI:`{rsi}` | Trend:`{tr}`\n"
+    if cp!='N/A' and cp!='none':msg+=f"🕯️ Candle:`{cp}`\n"
+    msg+=f"📥 Entry:`৳{s['entry']}` SL:`৳{s['sl']}`\n"
+    msg+=f"🎯 TP1:`৳{s['tp1']}` _(+{tp1_pct}%)_ TP2:`৳{s['tp2']}` _(+{tp2_pct}%)_\n"
+    msg+=f"🏷 {' · '.join(s['tags'][:4])}\n"
+    if s.get('warnings'):msg+=f"⚠️ {s['warnings'][0]}\n"
+    msg+="\n"
+    return msg
+
+def build_full_msg(scored,breakouts,dsex):
     now=datetime.now(BD_TZ).strftime("%d %b %Y %I:%M %p")
     stats=get_stats()
     buys=[s for s in scored if 'BUY' in s['signal']]
-    sells=[s for s in scored if 'SELL' in s['signal']][:5]
-    ew_list=find_ew([s for s in scored if 'BUY' in s['signal']])
-    ai=ai_analysis(buys[:5],ew_list,sells,dsex,stats)
+    sells=[s for s in scored if 'SELL' in s['signal']][:4]
+
+    ai_sig=ai_signal_analysis(buys[:4],[],sells,dsex,stats)
+    ai_brk=ai_breakout_analysis(breakouts[:3],dsex) if breakouts else ""
 
     # Save signals
     for s in buys[:8]:
         save_signal(s['symbol'],s['signal'],s['entry'],s['sl'],
                     s['tp1'],s['tp2'],s['score'],s.get('inds',[]))
 
-    msg=f"🏦 *DSE Signal Bot v3*\n"
-    msg+=f"📅 {now} | 📊 DSEX: `{dsex}`\n"
-    msg+=f"🧠 Win Rate: `{stats['wr']}%` ({stats['wins']}W/{stats['losses']}L/{stats['pending']}P)\n"
+    msg=f"🏦 *DSE Signal Bot v4*\n"
+    msg+=f"📅 {now} | 📊 DSEX:`{dsex}`\n"
+    msg+=f"🧠 Win Rate:`{stats['wr']}%` ({stats['wins']}W/{stats['losses']}L/{stats['pending']}P)\n"
     msg+=f"{'━'*22}\n\n"
 
+    # Breakout Scanner (সবার আগে)
+    if breakouts:
+        msg+=f"🚀 *BREAKOUT SCANNER — {len(breakouts)} টি স্টক*\n"
+        msg+="_(Parabolic move এর আগের সংকেত)_\n\n"
+        for s in breakouts[:5]:msg+=fmt_breakout(s)
+        if ai_brk:msg+=f"🤖 *Breakout AI বিশ্লেষণ*\n{ai_brk}\n\n"
+        msg+=f"{'━'*22}\n\n"
+
+    # Standard BUY signals
     if buys:
-        normal=[s for s in buys if s['ltp']>=PENNY_THRESHOLD][:6]
+        normal=[s for s in buys if s['ltp']>=PENNY_THRESHOLD][:5]
         penny=[s for s in buys if s['ltp']<PENNY_THRESHOLD][:4]
         if normal:
             msg+=f"🟢 *BUY সিগনাল — {len(normal)} টি*\n\n"
-            for s in normal:msg+=fmt_stock(s)
+            for s in normal:msg+=fmt_signal(s)
         if penny:
             msg+=f"💎 *Penny BUY — {len(penny)} টি* _(বেশি ঝুঁকি)_\n\n"
-            for s in penny:msg+=fmt_stock(s)
+            for s in penny:msg+=fmt_signal(s)
     else:
-        msg+="🟡 আজ BUY সিগনাল নেই\n\n"
+        msg+="🟡 আজ standard BUY সিগনাল নেই\n\n"
 
     if sells:
         msg+=f"🔴 *SELL — {len(sells)} টি*\n"
@@ -584,23 +722,46 @@ def build_msg(scored,dsex):
             msg+=f"*{s['symbol']}* `৳{s['ltp']}` ({s['change']:+.1f}%) Score:{s['score']}\n"
         msg+="\n"
 
-    if ew_list:
-        msg+="🌊 *EW Wave 2/4 — Strongest BUY*\n\n"
-        for s in ew_list:
-            pct=round((s['tp1']-s['ltp'])/s['ltp']*100,1)
-            msg+=f"*{s['symbol']}* `৳{s['ltp']}` ({s['change']:+.1f}%)\n"
-            msg+=f"TP1:`৳{s['tp1']}` _(+{pct}%)_ | _{s.get('ew_note','')}_\n\n"
-
-    msg+=f"{'━'*22}\n🤖 *AI বিশ্লেষণ*\n{ai}\n\n"
+    msg+=f"{'━'*22}\n🤖 *Signal AI বিশ্লেষণ*\n{ai_sig}\n\n"
     msg+=f"💬 _যেকোনো স্টক সম্পর্কে message করুন_\n"
     msg+="⚠️ _Stop Loss সবসময় ব্যবহার করুন। বিনিয়োগে ঝুঁকি আছে।_"
     return msg
 
 # ══════════════════════════════════════
-#  OUTCOME CHECKER
+#  SEND SIGNALS
+# ══════════════════════════════════════
+async def send_signals(bot):
+    log.info("Signal job শুরু...")
+    await bot.send_message(chat_id=CHAT_ID,
+        text="⏳ Breakout Scanner + Full Analysis চলছে (৩-৫ মিনিট)...")
+    try:
+        stocks=fetch_stocks()
+        if not stocks:
+            await bot.send_message(chat_id=CHAT_ID,
+                text="❌ ডেটা নেই। DSE বন্ধ (শুক্র/শনি) বা trading hour শেষ।")
+            return
+        dsex=get_dsex()
+
+        # Breakout scan (historical data দরকার)
+        await bot.send_message(chat_id=CHAT_ID,text="🔍 Breakout candidates খুঁজছি...")
+        breakouts=scan_breakouts(stocks)
+        log.info(f"Breakout candidates: {len(breakouts)}")
+
+        # Standard analysis
+        scored=analyze(stocks,use_hist=True)
+
+        msg=build_full_msg(scored,breakouts,dsex)
+        for i in range(0,len(msg),4000):
+            await bot.send_message(chat_id=CHAT_ID,text=msg[i:i+4000],parse_mode='Markdown')
+        log.info(f"✅ Done")
+    except Exception as e:
+        log.error(f"Error:{e}")
+        await bot.send_message(chat_id=CHAT_ID,text=f"❌ সমস্যা:\n{e}")
+
+# ══════════════════════════════════════
+#  OUTCOME CHECK
 # ══════════════════════════════════════
 async def check_outcomes(bot):
-    log.info("Outcome check...")
     try:
         conn=sqlite3.connect(DB_PATH);c=conn.cursor()
         today=datetime.now(BD_TZ).strftime('%Y-%m-%d')
@@ -614,24 +775,22 @@ async def check_outcomes(bot):
             cur=pm.get(sym)
             if not cur:continue
             pct=round((cur-entry)/entry*100,2)
+            conn=sqlite3.connect(DB_PATH);c=conn.cursor()
             if cur>=tp1:
-                conn=sqlite3.connect(DB_PATH);c=conn.cursor()
                 c.execute('UPDATE signals SET outcome="win",outcome_pct=? WHERE id=?',(pct,sid))
-                conn.commit();conn.close()
-                report+=f"✅ *{sym}* TP1 Hit! +{pct}%\n";w+=1
+                report+=f"✅ *{sym}* +{pct}%\n";w+=1
             elif cur<=sl:
-                conn=sqlite3.connect(DB_PATH);c=conn.cursor()
                 c.execute('UPDATE signals SET outcome="loss",outcome_pct=? WHERE id=?',(pct,sid))
-                conn.commit();conn.close()
-                report+=f"❌ *{sym}* SL Hit! {pct}%\n";l+=1
+                report+=f"❌ *{sym}* {pct}%\n";l+=1
+            conn.commit();conn.close()
         if w+l>0:
-            report+=f"\n✅{w} ❌{l} | 🧠 Bot learning updated!"
+            report+=f"\n✅{w} ❌{l}"
             await bot.send_message(chat_id=CHAT_ID,text=report,parse_mode='Markdown')
     except Exception as e:
-        log.error(f"Outcome check error:{e}")
+        log.error(f"Outcome error:{e}")
 
 # ══════════════════════════════════════
-#  AI CHAT HANDLER
+#  CHAT HANDLER
 # ══════════════════════════════════════
 async def handle_message(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
     text=update.message.text
@@ -642,97 +801,84 @@ async def handle_message(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
     for s in stocks:
         if s['symbol'].upper() in text.upper():
             ind=get_all_indicators(s['symbol'])
-            ctx_txt=(f"\n{s['symbol']} Live Data:\n"
-                    f"Price:৳{s['ltp']} ({s['change']:+.1f}%) Vol:{s['volume']:,}\n"
-                    f"H:{s['high']} L:{s['low']} Yesterday:৳{s['yday']}\n")
+            ctx_txt=f"\n{s['symbol']} Live: ৳{s['ltp']} ({s['change']:+.1f}%) Vol:{s['volume']:,}\n"
             if ind['ok']:
                 ctx_txt+=(f"RSI:{ind['rsi']} MACD:{'↑' if ind['macd_h']>0 else '↓'} "
                          f"BB:{ind['bb_pos']} Trend:{ind['trend']} EW:{ind['ew_phase']}\n"
-                         f"MA20:{ind['ma20']} MA50:{ind['ma50']} EMA9:{ind['ema9']}\n"
+                         f"Candle:{ind['candle_pattern']} Vol_ratio:{ind['vol_ratio']}x\n"
+                         f"MA20:{ind['ma20']} MA50:{ind['ma50']} EMA9:{ind['ema9']} EMA21:{ind['ema21']}\n"
                          f"SwingHigh:{ind['swing_high']} SwingLow:{ind['swing_low']}\n"
-                         f"FakeBreak:{ind['fake_break']}\n")
+                         f"Base:{ind['base_days']}days FakeBreak:{ind['fake_break']}\n")
             break
     prompt=(
-        f"তুমি DSE Bangladesh expert analyst। বাংলায় সংক্ষিপ্ত ও সহজ উত্তর দাও।\n"
-        f"Bot stats: WinRate:{stats['wr']}% Total:{stats['total']}\n"
-        f"{ctx_txt}\nUser: {text}\n\n"
-        f"৬-৮ লাইনে উত্তর দাও। Technical analysis ও practical পরামর্শ দাও।"
+        f"তুমি DSE Bangladesh expert analyst। বাংলায় সহজ ভাষায় উত্তর দাও।\n"
+        f"Bot WinRate:{stats['wr']}% Total:{stats['total']}\n{ctx_txt}\n"
+        f"User: {text}\n\n৬-৮ লাইনে technical analysis ও practical পরামর্শ দাও।"
     )
-    try:
-        client=anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        resp=client.messages.create(model="claude-sonnet-4-20250514",max_tokens=500,
-                                    messages=[{"role":"user","content":prompt}])
-        await update.message.reply_text(resp.content[0].text)
-    except Exception as e:
-        await update.message.reply_text(f"সমস্যা: {str(e)[:100]}")
-
-# ══════════════════════════════════════
-#  SEND SIGNALS
-# ══════════════════════════════════════
-async def send_signals(bot):
-    log.info("Signal job শুরু...")
-    await bot.send_message(chat_id=CHAT_ID,text="⏳ SMC+EW+RSI+MACD+BB+MA+EMA+Candle+FakeBreak বিশ্লেষণ চলছে...")
-    try:
-        stocks=fetch_stocks()
-        if not stocks:
-            await bot.send_message(chat_id=CHAT_ID,text="❌ ডেটা নেই।\n• DSE বন্ধ (শুক্র/শনি)?\n• Trading hour শেষ?")
-            return
-        dsex=get_dsex()
-        scored=analyze(stocks,use_hist=True)
-        msg=build_msg(scored,dsex)
-        for i in range(0,len(msg),4000):
-            await bot.send_message(chat_id=CHAT_ID,text=msg[i:i+4000],parse_mode='Markdown')
-        log.info(f"✅ {len(stocks)} stocks analyzed")
-    except Exception as e:
-        log.error(f"Error:{e}")
-        await bot.send_message(chat_id=CHAT_ID,text=f"❌ সমস্যা:\n{e}")
+    await update.message.reply_text(ai_chat(prompt))
 
 # ══════════════════════════════════════
 #  COMMANDS
 # ══════════════════════════════════════
 async def cmd_start(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(
-        "🏦 *DSE Signal Bot v3 — Pro*\n\n"
+        "🏦 *DSE Signal Bot v4 — Breakout Edition*\n\n"
+        "🚀 *NEW: Breakout Scanner*\n"
+        "DOMINAGE, FINEFOODS, APEXSPINN এর মতো\n"
+        "parabolic স্টক আগে থেকে ধরতে পারে!\n\n"
         "🔬 *Analysis Engine:*\n"
-        "✅ SMC (Order Block, Liquidity)\n"
-        "✅ Elliott Wave (Wave 2/4 detection)\n"
+        "✅ Breakout Scanner (Volume+Base+MA+RSI)\n"
+        "✅ Multi-candle Pattern (10+ types)\n"
+        "✅ Elliott Wave Detection\n"
         "✅ RSI + MACD + Bollinger Bands\n"
         "✅ MA20, MA50, EMA9, EMA21\n"
-        "✅ Candlestick Patterns (10+ types)\n"
-        "✅ Fibonacci (6 levels)\n"
         "✅ Fake Breakout Detection\n"
-        "✅ Volume Spike Analysis\n"
-        "✅ Trend Alignment Score\n"
-        "✅ TP1 min 8%, TP2 min 20%\n\n"
+        "✅ TP1:8% TP2:20% TP3:50%+\n\n"
         "📌 *Commands:*\n"
-        "/signal — পূর্ণ বিশ্লেষণ\n"
-        "/stats — Performance দেখুন\n"
+        "/signal — সম্পূর্ণ বিশ্লেষণ + Breakout\n"
+        "/breakout — শুধু Breakout Scanner\n"
+        "/stats — Performance\n"
         "/top — Top Gainers\n"
         "/sell — Sell সিগনাল\n"
-        "/ew — EW Wave 2/4\n"
         "/penny — Penny stocks\n\n"
-        "💬 *যেকোনো স্টক সম্পর্কে message করুন!*\n"
-        "_যেমন: GP কি কিনব? BRACBANK analysis দাও_\n\n"
-        "🕕 প্রতিদিন সন্ধ্যা ৬টায় auto signal\n"
+        "💬 *যেকোনো স্টক message করুন!*\n"
+        "_যেমন: BRACBANK কি breakout এ আছে?_\n\n"
+        "🕕 সন্ধ্যা ৬টায় auto signal\n"
         "⚠️ _বিনিয়োগে ঝুঁকি আছে_",parse_mode='Markdown')
 
 async def cmd_signal(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("⏳ সম্পূর্ণ বিশ্লেষণ চলছে (২-৩ মিনিট লাগতে পারে)...")
+    await u.message.reply_text("⏳ Breakout + Full Analysis চলছে (৩-৫ মিনিট)...")
     await send_signals(ctx.bot)
+
+async def cmd_breakout(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text("🚀 Breakout Scanner চলছে...")
+    stocks=fetch_stocks()
+    if not stocks:await u.message.reply_text("❌ ডেটা নেই।");return
+    candidates=scan_breakouts(stocks)
+    if not candidates:
+        await u.message.reply_text("আজ কোনো breakout candidate নেই।\nকাল আবার চেক করুন।")
+        return
+    dsex=get_dsex()
+    ai=ai_breakout_analysis(candidates[:4],dsex)
+    msg=f"🚀 *Breakout Scanner — {len(candidates)} টি স্টক*\n"
+    msg+="_(Parabolic move এর আগের সংকেত)_\n\n"
+    for s in candidates[:6]:msg+=fmt_breakout(s)
+    msg+=f"{'━'*20}\n🤖 *AI বিশ্লেষণ*\n{ai}\n\n"
+    msg+="⚠️ _Breakout fail হতে পারে। SL সবসময় দিন।_"
+    for i in range(0,len(msg),4000):
+        await u.message.reply_text(msg[i:i+4000],parse_mode='Markdown')
 
 async def cmd_stats(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     stats=get_stats()
     msg=f"📊 *Bot Performance*\n\n"
-    msg+=f"মোট Signal: `{stats['total']}`\n"
-    msg+=f"✅ Win: `{stats['wins']}` | ❌ Loss: `{stats['losses']}`\n"
-    msg+=f"⏳ Pending: `{stats['pending']}`\n"
-    msg+=f"🎯 Win Rate: `{stats['wr']}%`\n"
-    msg+=f"📈 Avg Return: `{stats['avg']}%`\n\n"
+    msg+=f"মোট Signal:`{stats['total']}` | Win:`{stats['wins']}` | Loss:`{stats['losses']}`\n"
+    msg+=f"⏳ Pending:`{stats['pending']}` | 🎯 Win Rate:`{stats['wr']}%`\n"
+    msg+=f"📈 Avg Return:`{stats['avg']}%`\n\n"
     if stats['recent']:
         msg+="🕐 *সাম্প্রতিক:*\n"
         for sym,entry,tp1,outcome,pct,date in stats['recent'][:6]:
             ic="✅" if outcome=='win' else "❌" if outcome=='loss' else "⏳"
-            msg+=f"{ic} {sym} ({date}) ৳{entry} {outcome} {pct:+.1f}%\n"
+            msg+=f"{ic} {sym} ({date}) ৳{entry} → {pct:+.1f}%\n"
     await u.message.reply_text(msg,parse_mode='Markdown')
 
 async def cmd_top(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
@@ -740,9 +886,9 @@ async def cmd_top(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     stocks=fetch_stocks()
     if not stocks:await u.message.reply_text("❌ ডেটা নেই।");return
     top=sorted(stocks,key=lambda x:x['change'],reverse=True)[:12]
-    msg="🔥 *Top 12 Gainers*\n_(Circuit ও কম volume বাদ)_\n\n"
+    msg="🔥 *Top 12 Gainers*\n\n"
     for i,s in enumerate(top,1):
-        p="💎" if s['ltp']<PENNY_THRESHOLD else "  "
+        p="💎" if s['ltp']<PENNY_THRESHOLD else ""
         msg+=f"{i}.{p}*{s['symbol']}* `৳{s['ltp']}` (+{s['change']:.1f}%) Vol:{s['volume']:,}\n"
     await u.message.reply_text(msg,parse_mode='Markdown')
 
@@ -752,34 +898,14 @@ async def cmd_sell(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     if not stocks:await u.message.reply_text("❌ ডেটা নেই।");return
     scored=analyze(stocks,use_hist=False)
     sells=[s for s in scored if 'SELL' in s['signal']]
-    if not sells:await u.message.reply_text("আজ SELL সিগনাল নেই।");return
+    if not sells:await u.message.reply_text("আজ SELL নেই।");return
     msg="🔴 *SELL সিগনাল*\n\n"
     for s in sells[:8]:
-        msg+=f"*{s['symbol']}* `৳{s['ltp']}` ({s['change']:+.1f}%) Score:{s['score']}\n"
-        msg+=f"🏷 {' · '.join(s['tags'][:3])}\n"
-        if s.get('warnings'):msg+=f"⚠️ {s['warnings'][0]}\n"
-        msg+="\n"
-    msg+="⚠️ _বিনিয়োগে ঝুঁকি আছে।_"
-    await u.message.reply_text(msg,parse_mode='Markdown')
-
-async def cmd_ew(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("🌊 EW স্ক্যান চলছে (historical data আনছি)...")
-    stocks=fetch_stocks()
-    if not stocks:await u.message.reply_text("❌ ডেটা নেই।");return
-    scored=analyze(stocks,use_hist=True)
-    ew_list=find_ew([s for s in scored if 'BUY' in s['signal']])
-    if not ew_list:await u.message.reply_text("আজ EW Wave 2/4 candidate নেই।");return
-    msg="🌊 *EW Wave 2/4 — সবচেয়ে শক্তিশালী BUY*\n\n"
-    for s in ew_list:
-        tp1_pct=round((s['tp1']-s['ltp'])/s['ltp']*100,1)
-        tp2_pct=round((s['tp2']-s['ltp'])/s['ltp']*100,1)
-        msg+=fmt_stock(s)
-        msg+=f"🌊 _{s.get('ew_note','')}_\n\n"
-    msg+="⚠️ _Stop Loss সবসময় ব্যবহার করুন।_"
+        msg+=f"*{s['symbol']}* `৳{s['ltp']}` ({s['change']:+.1f}%) Score:{s['score']}\n\n"
     await u.message.reply_text(msg,parse_mode='Markdown')
 
 async def cmd_penny(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("💎 Penny Stock বিশ্লেষণ চলছে...")
+    await u.message.reply_text("💎 Penny Stock scan চলছে...")
     stocks=fetch_stocks()
     if not stocks:await u.message.reply_text("❌ ডেটা নেই।");return
     penny=[s for s in stocks if s['ltp']<PENNY_THRESHOLD]
@@ -787,9 +913,8 @@ async def cmd_penny(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     scored=analyze(penny,use_hist=False)
     buys=[s for s in scored if 'BUY' in s['signal']]
     if not buys:await u.message.reply_text("আজ penny BUY নেই।");return
-    msg="💎 *Penny Stock BUY*\n_(৳১০ এর নিচে — বেশি ঝুঁকি, বেশি সুযোগ)_\n\n"
-    for s in buys[:8]:msg+=fmt_stock(s,show_detail=True)
-    msg+="⚠️ _Penny stock এ ছোট amount ব্যবহার করুন।_"
+    msg="💎 *Penny BUY* _(বেশি ঝুঁকি)_\n\n"
+    for s in buys[:8]:msg+=fmt_signal(s)
     await u.message.reply_text(msg,parse_mode='Markdown')
 
 # ══════════════════════════════════════
@@ -801,21 +926,21 @@ async def post_init(app):
     sched.add_job(send_signals,'cron',hour=12,minute=0,args=[app.bot])
     sched.add_job(check_outcomes,'cron',hour=4,minute=0,args=[app.bot])
     sched.start()
-    log.info("✅ Scheduler: Signal UTC 12:00 | Check UTC 04:00")
+    log.info("✅ Scheduler: Signal UTC12 | Check UTC04")
 
 def main():
     init_db()
-    log.info("🚀 DSE Signal Bot v3 Pro চালু হচ্ছে...")
+    log.info("🚀 DSE Signal Bot v4 Breakout Edition চালু...")
     app=Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
-    app.add_handler(CommandHandler("start",  cmd_start))
-    app.add_handler(CommandHandler("signal", cmd_signal))
-    app.add_handler(CommandHandler("stats",  cmd_stats))
-    app.add_handler(CommandHandler("top",    cmd_top))
-    app.add_handler(CommandHandler("sell",   cmd_sell))
-    app.add_handler(CommandHandler("ew",     cmd_ew))
-    app.add_handler(CommandHandler("penny",  cmd_penny))
+    app.add_handler(CommandHandler("start",   cmd_start))
+    app.add_handler(CommandHandler("signal",  cmd_signal))
+    app.add_handler(CommandHandler("breakout",cmd_breakout))
+    app.add_handler(CommandHandler("stats",   cmd_stats))
+    app.add_handler(CommandHandler("top",     cmd_top))
+    app.add_handler(CommandHandler("sell",    cmd_sell))
+    app.add_handler(CommandHandler("penny",   cmd_penny))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_message))
-    log.info("✅ Bot v3 Pro polling শুরু")
+    log.info("✅ v4 polling শুরু")
     app.run_polling(drop_pending_updates=True)
 
 if __name__=='__main__':
