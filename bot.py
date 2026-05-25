@@ -252,6 +252,7 @@ def get_all_indicators(symbol):
 
         body2=abs(c2-o2);rng2=h2-l2 if h2>l2 else 0.01
         body1=abs(c1-o1);rng1=h1-l1 if h1>l1 else 0.01
+        body0=abs(c0-o0);rng0=h0-l0 if h0>l0 else 0.01
 
         bull2=c2>o2;bull1=c1>o1;bull0=c0>o0
         uw2=(h2-max(c2,o2))/rng2
