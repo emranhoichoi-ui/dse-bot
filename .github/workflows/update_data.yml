@@ -1,0 +1,33 @@
+name: DSE Daily Data Update
+
+on:
+  schedule:
+    - cron: '45 8 * * 0-4'  # UTC 8:45 = BD 2:45 PM, রবি-বৃহস্পতি
+  workflow_dispatch:  # manual trigger
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Update DSE data
+        run: python update_data.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "DSE Bot"
+          git config user.email "bot@dse.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Update DSE data $(date +'%Y-%m-%d')"
+          git push
