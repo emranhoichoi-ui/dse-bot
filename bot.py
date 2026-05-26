@@ -996,6 +996,48 @@ async def cmd_penny(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
 # ══════════════════════
 #  SCHEDULER + MAIN
 # ══════════════════════
+async def cmd_giant(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text(
+        "Sleeping Giant Scanner cholche...\n"
+        "15ti winning stock er pattern diye khujche...\n"
+        "(2-3 minit lagbe)"
+    )
+    stocks=fetch_stocks()
+    if not stocks:await u.message.reply_text("Data nei.");return
+    giants=scan_sleeping_giants(stocks)
+    if not giants:
+        await u.message.reply_text(
+            "Aj kono Sleeping Giant nei.\n\n"
+            "Karon: DSE te ekhon emon kono stock nei jeta:\n"
+            "- 52w low er kache AND\n"
+            "- Volume spike hochhe AND\n"
+            "- EMA cross korche\n\n"
+            "Kal abar try korun."
+        )
+        return
+
+    msg=f"SLEEPING GIANT SCANNER -- {len(giants)} ti Stock\n"
+    msg+="="*26+"\n"
+    msg+="15ti real winning stock er pattern:\n"
+    msg+="MEGHNAPET, BDTHAIFOOD, RDFOOD,\n"
+    msg+="NAHEEACP, ASIATICLAB er moto\n\n"
+
+    for s in giants:msg+=fmt_giant(s)
+
+    msg+="="*26+"\n"
+    msg+="STRATEGY:\n"
+    msg+="- Entry: EMA cross er din ba tarporer din\n"
+    msg+="- SL: 52w low er just upore\n"
+    msg+="- TP1: 8% e half sell\n"
+    msg+="- TP2: 20% e quarter sell\n"
+    msg+="- TP3/4: baki hold korun parabolic er jonno\n\n"
+    msg+="SHOBCHEYE MUHURTPORTO: Stop Loss!!!"
+
+    for i in range(0,len(msg),4000):
+        await u.message.reply_text(msg[i:i+4000])
+
+
+
 async def post_init(app):
     init_db()
     sched=AsyncIOScheduler(timezone='UTC')
@@ -1223,44 +1265,3 @@ def fmt_giant(s):
         if len(s['reasons'])>1:lines.append(f"Karon 2: {s['reasons'][1]}")
     lines.append("")
     return "\n".join(lines)
-
-
-async def cmd_giant(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text(
-        "Sleeping Giant Scanner cholche...\n"
-        "15ti winning stock er pattern diye khujche...\n"
-        "(2-3 minit lagbe)"
-    )
-    stocks=fetch_stocks()
-    if not stocks:await u.message.reply_text("Data nei.");return
-    giants=scan_sleeping_giants(stocks)
-    if not giants:
-        await u.message.reply_text(
-            "Aj kono Sleeping Giant nei.\n\n"
-            "Karon: DSE te ekhon emon kono stock nei jeta:\n"
-            "- 52w low er kache AND\n"
-            "- Volume spike hochhe AND\n"
-            "- EMA cross korche\n\n"
-            "Kal abar try korun."
-        )
-        return
-
-    msg=f"SLEEPING GIANT SCANNER -- {len(giants)} ti Stock\n"
-    msg+="="*26+"\n"
-    msg+="15ti real winning stock er pattern:\n"
-    msg+="MEGHNAPET, BDTHAIFOOD, RDFOOD,\n"
-    msg+="NAHEEACP, ASIATICLAB er moto\n\n"
-
-    for s in giants:msg+=fmt_giant(s)
-
-    msg+="="*26+"\n"
-    msg+="STRATEGY:\n"
-    msg+="- Entry: EMA cross er din ba tarporer din\n"
-    msg+="- SL: 52w low er just upore\n"
-    msg+="- TP1: 8% e half sell\n"
-    msg+="- TP2: 20% e quarter sell\n"
-    msg+="- TP3/4: baki hold korun parabolic er jonno\n\n"
-    msg+="SHOBCHEYE MUHURTPORTO: Stop Loss!!!"
-
-    for i in range(0,len(msg),4000):
-        await u.message.reply_text(msg[i:i+4000])
