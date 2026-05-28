@@ -239,9 +239,25 @@ def get_ind(symbol):
     elif e9<e21 and ma20<ma50:trend='down'
     else:trend='neutral'
 
-    # ══ DOWNTREND FILTER (new!) ══
-    # MA50 niche thakle ba strong downtrend e BUY signal debo na
-    trend_ok=trend not in('strong_down','down')
+    # ══ MULTI-TIMEFRAME DOWNTREND FILTER ══
+    # Multiple conditions check kori
+    trend_ok=True
+
+    # 1. Short-term trend (EMA based)
+    if trend in('strong_down','down'):
+        trend_ok=False
+
+    # 2. 6-month trend niche + price MA200 theke 15%+ niche
+    if trend_6m=='down' and trend_12m=='down' and vs_ma200<-15:
+        trend_ok=False
+
+    # 3. 3-month peak theke 15%+ niche + bearish MACD
+    if from_peak<-15 and mh<0:
+        trend_ok=False
+
+    # 4. Price MA100 er niche AND MA200 er niche = strong downtrend
+    if last<ma100 and last<ma200 and trend_12m=='down':
+        trend_ok=False
 
     # Volume
     avg_vol=sum(vols[-20:])/max(len(vols[-20:]),1) if vols else 0
@@ -250,6 +266,23 @@ def get_ind(symbol):
     # Swing
     lb=min(50,len(closes))
     sh=max(highs[-lb:]);sl=min(lows[-lb:])
+
+    # MA100, MA200 for better trend detection
+    ma100=sma(closes,min(100,len(closes)))
+    ma200=sma(closes,min(200,len(closes)))
+
+    # Multi-timeframe trend (6m and 12m)
+    m6_ago=closes[-126] if len(closes)>=126 else closes[0]
+    m12_ago=closes[-252] if len(closes)>=252 else closes[0]
+    trend_6m='up' if last>m6_ago else 'down'
+    trend_12m='up' if last>m12_ago else 'down'
+
+    # 3-month peak (how far from recent high)
+    peak_3m=max(closes[-63:]) if len(closes)>=63 else last
+    from_peak=round((last-peak_3m)/peak_3m*100,1)
+
+    # Price vs MA200 (key long-term trend indicator)
+    vs_ma200=round((last-ma200)/ma200*100,1) if ma200>0 else 0
 
     # EW Detection (improved)
     ew_phase,ew_desc=detect_ew(closes,highs,lows)
@@ -309,8 +342,11 @@ def get_ind(symbol):
     return{
         'ok':True,'rsi':r,'macd':ml,'macd_sig':sl_,'macd_h':mh,
         'bb_upper':bbu,'bb_mid':bbm,'bb_lower':bbl,'bb_pos':bp,
-        'ma20':ma20,'ma50':ma50,'ema9':e9,'ema21':e21,
+        'ma20':ma20,'ma50':ma50,'ma100':ma100,'ma200':ma200,
+        'ema9':e9,'ema21':e21,
         'trend':trend,'trend_ok':trend_ok,
+        'trend_6m':trend_6m,'trend_12m':trend_12m,
+        'from_peak':from_peak,'vs_ma200':vs_ma200,
         'vol_ratio':vol_ratio,'swing_high':sh,'swing_low':sl,
         'ew_phase':ew_phase,'ew_desc':ew_desc,
         'fake_break':fake_break,'range_bound':range_bound,
@@ -851,13 +887,14 @@ async def handle_message(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
             if ind['ok']:
                 ctx_txt+=(f"RSI:{ind['rsi']} MACD:{'up' if ind['macd_h']>0 else 'down'} "
                          f"BB:{ind['bb_pos']} Trend:{ind['trend']}\n"
+                         f"6m Trend:{ind.get('trend_6m','-')} 12m Trend:{ind.get('trend_12m','-')}\n"
+                         f"From 3m Peak:{ind.get('from_peak',0)}% vs MA200:{ind.get('vs_ma200',0)}%\n"
                          f"EW Phase: {ind['ew_phase']}\n"
                          f"EW Detail: {ind['ew_desc']}\n"
                          f"Candle: {ind['candle']} (score:{ind['candle_score']})\n"
                          f"Vol Ratio: {ind['vol_ratio']}x\n"
-                         f"MA20:{ind['ma20']} MA50:{ind['ma50']} EMA9:{ind['ema9']} EMA21:{ind['ema21']}\n"
-                         f"Fib Level: {ind['fib_level']}\n"
-                         f"Range-bound: {ind['range_bound']}\n"
+                         f"MA20:{ind['ma20']} MA50:{ind['ma50']} MA200:{ind.get('ma200',0)}\n"
+                         f"EMA9:{ind['ema9']} EMA21:{ind['ema21']}\n"
                          f"Trend OK: {ind['trend_ok']}\n")
             break
     prompt=(
