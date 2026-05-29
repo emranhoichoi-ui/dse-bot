@@ -2,32 +2,41 @@ name: DSE Daily Data Update
 
 on:
   schedule:
-    - cron: '45 8 * * 0-4'  # UTC 8:45 = BD 2:45 PM, রবি-বৃহস্পতি
-  workflow_dispatch:  # manual trigger
+    - cron: '45 8 * * 0-4'   # UTC 8:45 = BD 2:45 PM, Sun-Thu
+    - cron: '0 9 * * 0-4'    # UTC 9:00 = BD 3:00 PM backup
+  workflow_dispatch:           # Manual trigger
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests beautifulsoup4
+        run: |
+          pip install requests beautifulsoup4 stocksurferbd pandas
 
-      - name: Update DSE data
+      - name: Fill data gaps (first time setup)
+        run: python fill_gap.py
+
+      - name: Update today's data
         run: python update_data.py
 
       - name: Commit and push
         run: |
           git config user.name "DSE Bot"
-          git config user.email "bot@dse.com"
+          git config user.email "dsebot@github.com"
           git add data/
-          git diff --staged --quiet || git commit -m "Update DSE data $(date +'%Y-%m-%d')"
+          git diff --staged --quiet || git commit -m "DSE data update $(date +'%Y-%m-%d')"
           git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
