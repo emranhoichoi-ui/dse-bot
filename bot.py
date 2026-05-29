@@ -338,6 +338,87 @@ def get_ind(symbol):
                   (sl+rng_fib*0.500,'0.500'),(sl+rng_fib*0.786,'0.786'),(sl+rng_fib*0.236,'0.236')]:
         if last>0 and abs(last-fv_)/last<0.025:fib_level=fl;break
 
+    # ══ SUPPORT / RESISTANCE LEVELS ══
+    def find_swing_highs(highs,closes,lookback=120,min_dist=5):
+        """Recent swing highs khoje bero kore"""
+        levels=[]
+        lb=min(lookback,len(highs))
+        h=highs[-lb:]
+        c=closes[-lb:]
+        for i in range(2,len(h)-2):
+            if h[i]>h[i-1] and h[i]>h[i-2] and h[i]>h[i+1] and h[i]>h[i+2]:
+                # Check not too close to existing levels
+                too_close=any(abs(h[i]-lv)/max(lv,1)<0.02 for lv in levels)
+                if not too_close:
+                    levels.append(round(h[i],2))
+        return sorted(set(levels))
+
+    def find_swing_lows(lows,closes,lookback=120,min_dist=5):
+        """Recent swing lows khoje bero kore"""
+        levels=[]
+        lb=min(lookback,len(lows))
+        l=lows[-lb:]
+        for i in range(2,len(l)-2):
+            if l[i]<l[i-1] and l[i]<l[i-2] and l[i]<l[i+1] and l[i]<l[i+2]:
+                too_close=any(abs(l[i]-lv)/max(lv,1)<0.02 for lv in levels)
+                if not too_close:
+                    levels.append(round(l[i],2))
+        return sorted(set(levels))
+
+    # Swing levels
+    swing_highs=find_swing_highs(highs,closes)
+    swing_lows=find_swing_lows(lows,closes)
+
+    # MA levels as support/resistance
+    ma_levels=[
+        ('MA20',round(ma20,2)),
+        ('MA50',round(ma50,2)),
+        ('MA100',round(ma100,2)),
+        ('MA200',round(ma200,2)),
+        ('EMA9',round(e9,2)),
+        ('EMA21',round(e21,2)),
+    ]
+
+    # Resistance: levels ABOVE current price (sorted ascending)
+    resistance=[]
+    for label,val in ma_levels:
+        if val>last*1.005:  # at least 0.5% above
+            resistance.append((val,label))
+    for val in swing_highs:
+        if val>last*1.005:
+            # Check not duplicate with MA levels
+            too_close=any(abs(val-rv)/max(rv,1)<0.025 for rv,_ in resistance)
+            if not too_close:
+                resistance.append((val,'Swing High'))
+    resistance.sort(key=lambda x:x[0])
+    resistance=resistance[:4]  # top 4 closest
+
+    # Support: levels BELOW current price (sorted descending)
+    support=[]
+    for label,val in ma_levels:
+        if val<last*0.995:  # at least 0.5% below
+            support.append((val,label))
+    for val in swing_lows:
+        if val<last*0.995:
+            too_close=any(abs(val-sv)/max(sv,1)<0.025 for sv,_ in support)
+            if not too_close:
+                support.append((val,'Swing Low'))
+    support.sort(key=lambda x:x[0],reverse=True)
+    support=support[:4]  # top 4 closest
+
+    # Nearest resistance for TP adjustment
+    nearest_r1=resistance[0][0] if resistance else last*1.10
+    nearest_r2=resistance[1][0] if len(resistance)>1 else last*1.20
+    nearest_r3=resistance[2][0] if len(resistance)>2 else last*1.35
+    nearest_r1_label=resistance[0][1] if resistance else ''
+    
+    # MA200 warning
+    ma200_warning=''
+    if ma200>0 and last<ma200:
+        dist=round((ma200-last)/last*100,1)
+        if dist<20:
+            ma200_warning=f"MA200 resistance {round(ma200,1)} ({dist}% upore) - ekhane partial sell korun"
+
     return{
         'ok':True,'rsi':r,'macd':ml,'macd_sig':sl_,'macd_h':mh,
         'bb_upper':bbu,'bb_mid':bbm,'bb_lower':bbl,'bb_pos':bp,
@@ -346,6 +427,10 @@ def get_ind(symbol):
         'trend':trend,'trend_ok':trend_ok,
         'trend_6m':trend_6m,'trend_12m':trend_12m,
         'from_peak':from_peak,'vs_ma200':vs_ma200,
+        'resistance':resistance,'support':support,
+        'nearest_r1':nearest_r1,'nearest_r2':nearest_r2,'nearest_r3':nearest_r3,
+        'nearest_r1_label':nearest_r1_label,
+        'ma200_warning':ma200_warning,
         'vol_ratio':vol_ratio,'swing_high':sh,'swing_low':sl,
         'ew_phase':ew_phase,'ew_desc':ew_desc,
         'fake_break':fake_break,'range_bound':range_bound,
@@ -1185,9 +1270,13 @@ def scan_sleeping_giants(stocks):
         tp3=round(max(live_price*1.50,live_price+risk*5),2)
         tp4=round(max(live_price*2.00,live_price+risk*8),2)
 
+        # Get daily indicators for S/R levels
+        giant_ind=get_ind(s['symbol'])
+
         giants.append({
             **s,'score':score,'signals':signals,'reasons':reasons,
             'entry':live_price,'sl':sl_val,'tp1':tp1,'tp2':tp2,'tp3':tp3,'tp4':tp4,
+            'ind':giant_ind,
             'w52_high':round(w52_high,2),'w52_low':round(w52_low,2),
             'from_low':from_low,'from_high':from_high,
             'vol_ratio':vol_ratio,'rsi':r,'ema9':round(e9,2),'ema21':round(e21,2),
@@ -1336,6 +1425,7 @@ def scan_momentum(stocks):
                 score+=1;signals.append("Daily Trend Up")
 
         if score<8:continue
+        s['daily_ind']=daily_ind  # Save for fmt_momentum
 
         # TP/SL
         ltp=s['ltp']
@@ -1361,23 +1451,64 @@ def scan_momentum(stocks):
     return results[:10]
 
 def fmt_momentum(s):
-    tp1p=round((s['tp1']-s['ltp'])/s['ltp']*100,1)
-    tp2p=round((s['tp2']-s['ltp'])/s['ltp']*100,1)
-    tp3p=round((s['tp3']-s['ltp'])/s['ltp']*100,1)
+    ltp=s['ltp']
+    ind=s.get('daily_ind',{})
+
+    # Get S/R from daily indicators
+    resistance=ind.get('resistance',[]) if ind.get('ok') else []
+    support=ind.get('support',[]) if ind.get('ok') else []
+    ma200_warn=ind.get('ma200_warning','') if ind.get('ok') else ''
+    ma50=ind.get('ma50',0) if ind.get('ok') else 0
+    ma200=ind.get('ma200',0) if ind.get('ok') else 0
+
+    # Adjust TP based on nearest resistance
+    nearest_r1=ind.get('nearest_r1',ltp*1.15) if ind.get('ok') else ltp*1.15
+    nearest_r2=ind.get('nearest_r2',ltp*1.30) if ind.get('ok') else ltp*1.30
+    nearest_r3=ind.get('nearest_r3',ltp*1.50) if ind.get('ok') else ltp*1.50
+    nearest_r1_label=ind.get('nearest_r1_label','') if ind.get('ok') else ''
+
+    # TP just below resistance (2% below)
+    tp1=round(min(s['tp1'], nearest_r1*0.98),2)
+    tp2=round(min(s['tp2'], nearest_r2*0.98),2)
+    tp3=round(min(s['tp3'], nearest_r3*0.98),2)
+
+    tp1p=round((tp1-ltp)/ltp*100,1)
+    tp2p=round((tp2-ltp)/ltp*100,1)
+    tp3p=round((tp3-ltp)/ltp*100,1)
+
     lines=[
         f"MOMENTUM: {s['symbol']} | Score:{s['score']}",
-        f"Daam: {s['ltp']} ({s['change']:+.1f}%) | Vol:{s['volume']:,}",
+        f"Daam: {ltp} ({s['change']:+.1f}%) | Vol:{s['volume']:,}",
         f"Weekly MA10:{s['wma10']} | MA20:{s['wma20']}",
         f"Weekly RSI:{s['wrsi']} | MACD:{s['wmacd_hist']}",
         f"Fresh MA Cross: {'YES!' if s['fresh_cross'] else 'No'} | Green: {'YES' if s['weekly_green'] else 'No'}",
-        f"",
-        f"Entry : {s['entry']}",
-        f"SL    : {s['sl']}",
-        f"TP1   : {s['tp1']} (+{tp1p}%)",
-        f"TP2   : {s['tp2']} (+{tp2p}%)",
-        f"TP3   : {s['tp3']} (+{tp3p}%) [Max]",
-        f"Signals: {' | '.join(s['signals'][:5])}",
     ]
+
+    # Daily MA info
+    if ma50>0:
+        lines.append(f"Daily MA50:{round(ma50,1)} | MA200:{round(ma200,1)}")
+
+    # Resistance levels
+    if resistance:
+        r_txt=' | '.join([f"{round(v,1)}({lbl})" for v,lbl in resistance[:3]])
+        lines.append(f"Resistance: {r_txt}")
+
+    # Support levels
+    if support:
+        s_txt=' | '.join([f"{round(v,1)}({lbl})" for v,lbl in support[:3]])
+        lines.append(f"Support   : {s_txt}")
+
+    lines+=[
+        f"",
+        f"Entry : {ltp}",
+        f"SL    : {s['sl']}",
+        f"TP1   : {tp1} (+{tp1p}%) [{nearest_r1_label} er age]" if nearest_r1_label else f"TP1   : {tp1} (+{tp1p}%)",
+        f"TP2   : {tp2} (+{tp2p}%)",
+        f"TP3   : {tp3} (+{tp3p}%) [Max]",
+        f"Signals: {' | '.join(s['signals'][:4])}",
+    ]
+
+    if ma200_warn:lines.append(f"!! {ma200_warn}")
     if s.get('reasons'):lines.append(f"Karon: {s['reasons'][0]}")
     lines.append("")
     return chr(10).join(lines)
