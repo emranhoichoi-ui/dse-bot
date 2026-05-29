@@ -1226,6 +1226,203 @@ def fmt_giant(s):
         if len(s['reasons'])>1:lines.append(f"Karon 2: {s['reasons'][1]}")
     lines.append("")
     return "\n".join(lines)
+# ══════════════════════════════════════
+#  WEEKLY MOMENTUM SCANNER
+#  Weekly MA10 > MA20 cross + RSI50+ + MACD positive
+# ══════════════════════════════════════
+def to_weekly(closes,highs,lows,vols,period=5):
+    """Daily data theke weekly OHLCV calculate kore"""
+    wc,wh,wl,wv=[],[],[],[]
+    for i in range(0,len(closes)-period+1,period):
+        wc.append(closes[i+period-1])
+        wh.append(max(highs[i:i+period]))
+        wl.append(min(lows[i:i+period]))
+        wv.append(sum(vols[i:i+period]))
+    return wc,wh,wl,wv
+
+def scan_momentum(stocks):
+    """
+    Weekly Momentum Strategy:
+    Weekly MA10 > MA20 cross
+    + RSI 50+
+    + MACD positive
+    + Positive weekly close
+    """
+    results=[]
+    for s in stocks:
+        data=get_hist(s['symbol'])
+        if not data or len(data['closes'])<60:continue
+
+        closes=data['closes'];highs=data['highs']
+        lows=data['lows'];vols=data['vols']
+
+        # Convert to weekly
+        wc,wh,wl,wv=to_weekly(closes,highs,lows,vols)
+        if len(wc)<22:continue
+
+        # Weekly indicators
+        wma10=sma(wc,10);wma10_p=sma(wc[:-1],10)
+        wma20=sma(wc,20);wma20_p=sma(wc[:-1],20)
+        wrsi=rsi(wc)
+        wml=ema(wc,12)-ema(wc,26)
+        wsl=wml*0.9
+        whist=round(wml-wsl,3)
+
+        # Conditions
+        ma_bull=wma10>wma20
+        fresh_cross=wma10>wma20 and wma10_p<=wma20_p
+        rsi_ok=wrsi>=50
+        macd_ok=whist>0
+        weekly_green=wc[-1]>wc[-2] if len(wc)>=2 else False
+
+        # Weekly volume trend
+        avg_wvol=sum(wv[-10:])/10 if len(wv)>=10 else 1
+        vol_inc=wv[-1]>avg_wvol*1.1
+
+        # Score
+        score=0;signals=[];reasons=[]
+
+        # 1. MA10 > MA20 (most important)
+        if fresh_cross:
+            score+=6;signals.append("MA10 Fresh Cross MA20!")
+            reasons.append("Weekly MA10 eikhuni MA20 cross korlo - medium-term uptrend shuru")
+        elif ma_bull:
+            score+=3;signals.append("MA10>MA20 Bull")
+            reasons.append("Weekly MA10>MA20 - uptrend confirmed")
+        else:
+            continue  # MA condition must be met
+
+        # 2. RSI
+        if 50<=wrsi<65:
+            score+=4;signals.append(f"W-RSI:{wrsi} Sweet Zone")
+            reasons.append(f"Weekly RSI {wrsi} - perfect momentum zone, overbought na")
+        elif 65<=wrsi<75:
+            score+=2;signals.append(f"W-RSI:{wrsi} Strong")
+        elif wrsi>=75:
+            score+=0;signals.append(f"W-RSI:{wrsi} High")
+            reasons.append(f"Weekly RSI {wrsi} - strong but monitor")
+        else:
+            continue  # RSI must be 50+
+
+        # 3. MACD
+        if macd_ok and wml>wsl:
+            score+=4;signals.append("W-MACD Bull Cross")
+            reasons.append("Weekly MACD bullish - momentum confirm")
+        elif macd_ok:
+            score+=2;signals.append("W-MACD Positive")
+        else:
+            score-=2  # MACD negative = penalty
+
+        # 4. Weekly close
+        if weekly_green:
+            score+=2;signals.append("Weekly Green Close")
+            reasons.append("Weekly candle positive close")
+
+        # 5. Volume increasing
+        if vol_inc:
+            score+=2;signals.append("Weekly Vol Inc")
+            reasons.append("Weekly volume barche - buying pressure")
+
+        # 6. Live price change
+        if s['change']>1:score+=1;signals.append(f"+{s['change']:.1f}% today")
+
+        # 7. Daily confirmation (RSI + MACD)
+        daily_ind=get_ind(s['symbol'])
+        if daily_ind['ok']:
+            if daily_ind['rsi']>50 and daily_ind['macd_h']>0:
+                score+=2;signals.append("Daily Confirm")
+                reasons.append("Daily RSI+MACD o positive - double confirmation")
+            if daily_ind['trend'] in('strong_up','up'):
+                score+=1;signals.append("Daily Trend Up")
+
+        if score<8:continue
+
+        # TP/SL
+        ltp=s['ltp']
+        sl=round(min(wl[-4:])*0.99,2) if len(wl)>=4 else round(ltp*0.92,2)
+        if sl>=ltp:sl=round(ltp*0.92,2)
+        risk=ltp-sl
+        if risk<=0:risk=ltp*0.08
+
+        tp1=round(max(ltp*1.15,ltp+risk*1.5),2)
+        tp2=round(max(ltp*1.30,ltp+risk*3),2)
+        tp3=round(max(ltp*1.50,ltp+risk*5),2)
+
+        results.append({
+            **s,'score':score,'signals':signals,'reasons':reasons,
+            'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3,
+            'wma10':round(wma10,2),'wma20':round(wma20,2),
+            'wrsi':wrsi,'wmacd_hist':whist,
+            'fresh_cross':fresh_cross,'weekly_green':weekly_green,
+            'vol_inc':vol_inc,
+        })
+
+    results.sort(key=lambda x:x['score'],reverse=True)
+    return results[:10]
+
+def fmt_momentum(s):
+    tp1p=round((s['tp1']-s['ltp'])/s['ltp']*100,1)
+    tp2p=round((s['tp2']-s['ltp'])/s['ltp']*100,1)
+    tp3p=round((s['tp3']-s['ltp'])/s['ltp']*100,1)
+    lines=[
+        f"MOMENTUM: {s['symbol']} | Score:{s['score']}",
+        f"Daam: {s['ltp']} ({s['change']:+.1f}%) | Vol:{s['volume']:,}",
+        f"Weekly MA10:{s['wma10']} | MA20:{s['wma20']}",
+        f"Weekly RSI:{s['wrsi']} | MACD:{s['wmacd_hist']}",
+        f"Fresh MA Cross: {'YES!' if s['fresh_cross'] else 'No'} | Green: {'YES' if s['weekly_green'] else 'No'}",
+        f"",
+        f"Entry : {s['entry']}",
+        f"SL    : {s['sl']}",
+        f"TP1   : {s['tp1']} (+{tp1p}%)",
+        f"TP2   : {s['tp2']} (+{tp2p}%)",
+        f"TP3   : {s['tp3']} (+{tp3p}%) [Max]",
+        f"Signals: {' | '.join(s['signals'][:5])}",
+    ]
+    if s.get('reasons'):lines.append(f"Karon: {s['reasons'][0]}")
+    lines.append("")
+    return chr(10).join(lines)
+
+
+async def cmd_momentum(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text(
+        "Weekly Momentum Scanner cholche...\n"
+        "Weekly MA10>MA20 + RSI50+ + MACD+ khujche...\n"
+        "(2-3 minit lagbe)"
+    )
+    stocks=fetch_stocks()
+    if not stocks:await u.message.reply_text("Data nei.");return
+    results=scan_momentum(stocks)
+    if not results:
+        await u.message.reply_text(
+            "Aj kono Momentum stock nei.\n\n"
+            "Conditions met hoyni:\n"
+            "- Weekly MA10 > MA20\n"
+            "- Weekly RSI >= 50\n"
+            "- Weekly MACD positive\n\n"
+            "Kal abar try korun."
+        )
+        return
+
+    msg=f"WEEKLY MOMENTUM SCANNER -- {len(results)} ti Stock\n"
+    msg+="="*26+"\n"
+    msg+="Weekly MA10>MA20 Cross + RSI50+ + MACD+\n\n"
+
+    for s in results:msg+=fmt_momentum(s)
+
+    msg+="="*26+"\n"
+    msg+="STRATEGY:\n"
+    msg+="- Entry: MA cross confirmed + daily RSI>50\n"
+    msg+="- SL: Last 4 weeks er low\n"
+    msg+="- TP1: +15% (half sell)\n"
+    msg+="- TP2: +30% (quarter sell)\n"
+    msg+="- TP3: +50%+ (rest hold)\n"
+    msg+="- Hold: Jotokhon MA10>MA20 thake\n\n"
+    msg+="STOP LOSS SHOBSHOMAI!"
+
+    for i in range(0,len(msg),4000):
+        await u.message.reply_text(msg[i:i+4000])
+
+
 async def cmd_giant(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(
         "Sleeping Giant Scanner cholche...\n"
@@ -1289,6 +1486,7 @@ def main():
     app.add_handler(CommandHandler("top",     cmd_top))
     app.add_handler(CommandHandler("sell",    cmd_sell))
     app.add_handler(CommandHandler("penny",   cmd_penny))
+    app.add_handler(CommandHandler("momentum",cmd_momentum))
     app.add_handler(CommandHandler("giant",   cmd_giant))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_message))
     log.info("Polling shuru")
