@@ -2,16 +2,14 @@ name: DSE Daily Data Update
 
 on:
   schedule:
-    - cron: '45 8 * * 0-4'   # UTC 8:45 = BD 2:45 PM, Sun-Thu
-    - cron: '0 9 * * 0-4'    # UTC 9:00 = BD 3:00 PM backup
-  workflow_dispatch:           # Manual trigger
+    - cron: "45 8 * * 0-4"
+  workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -19,16 +17,15 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4 stocksurferbd pandas
+        run: pip install requests beautifulsoup4
 
-      - name: Fill data gaps (first time setup)
+      - name: Fill historical gaps
         run: python fill_gap.py
-
-      - name: Update today's data
+        
+      - name: Update today data
         run: python update_data.py
 
       - name: Commit and push
