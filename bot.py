@@ -1036,12 +1036,8 @@ async def cmd_penny(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
 def scan_sleeping_giants(stocks):
     """
-    DSE Sleeping Giant Strategy:
-    - দীর্ঘ downtrend বা sideways এর পর
-    - হঠাৎ Volume explosion
-    - Fresh EMA crossover
-    - RSI oversold থেকে বের হচ্ছে
-    - MACD turning positive
+    DSE Sleeping Giant Strategy
+    15ti real winning stock theke sikha pattern
     """
     giants=[]
     for s in stocks:
@@ -1049,157 +1045,159 @@ def scan_sleeping_giants(stocks):
         data=get_hist(s['symbol'])
         if not data or len(data['closes'])<60:continue
 
-        closes=data['closes'];highs=data['highs']
-        lows=data['lows'];vols=data['vols']
-        cur=closes[-1]
+        closes=data['closes']
+        highs=data['highs']
+        lows=data['lows']
+        vols=data['vols']
 
-        # 52-week high/low
+        # Use LIVE price (not historical last price)
+        live_price=s['ltp']
+        live_vol=s['volume']
+        live_chg=s['change']
+
+        # 52-week from historical data (last 252 trading days)
         lookback=min(252,len(closes))
-        w52_high=max(closes[-lookback:])
-        w52_low=min(closes[-lookback:])
+        w52_high=max(highs[-lookback:])   # highs use kori - more accurate
+        w52_low=min(lows[-lookback:])     # lows use kori - more accurate
         if w52_low<=0:continue
-        from_low=round((cur-w52_low)/w52_low*100,1)
-        from_high=round((cur-w52_high)/w52_high*100,1)
 
-        # Volume
-        avg_vol=sum(vols[-20:])/max(len(vols[-20:]),1) if vols else 0
-        cur_vol=vols[-1] if vols else 0
-        vol_ratio=round(cur_vol/max(avg_vol,1),2)
+        from_low=round((live_price-w52_low)/w52_low*100,1)
+        from_high=round((live_price-w52_high)/w52_high*100,1)
 
-        # Indicators
+        # Historical indicators (from data)
         r=rsi(closes)
-        ml,sl_,hist=macd(closes)
+        ml,sl_,mh=macd(closes)
         e9=ema(closes,min(9,len(closes)))
         e21=ema(closes,min(21,len(closes)))
+        ma50_val=sma(closes,min(50,len(closes)))
+        ma200_val=sma(closes,min(200,len(closes)))
+
+        # Previous EMA for crossover detection
         e9_prev=ema(closes[:-1],min(9,len(closes)-1)) if len(closes)>1 else e9
         e21_prev=ema(closes[:-1],min(21,len(closes)-1)) if len(closes)>1 else e21
-        ma50=sma(closes,min(50,len(closes)))
+        fresh_cross=e9>e21 and e9_prev<=e21_prev
+
+        # Volume ratio (live volume vs historical average)
+        avg_vol=sum(vols[-20:])/max(len(vols[-20:]),1) if vols else 0
+        vol_ratio=round(live_vol/max(avg_vol,1),2) if avg_vol>0 else 0
+
+        # BB
         bbu,bbm,bbl=bb(closes)
 
-        # Fresh EMA crossover (last 3 days)
-        fresh_cross=e9>e21 and e9_prev<=e21_prev
-        ema_bull=e9>e21
+        # Base detection
+        base_days=0
+        if len(highs)>=30:
+            rng30=max(highs[-30:])-min(lows[-30:])
+            avg30=sum(closes[-30:])/30
+            if avg30>0 and rng30/avg30<0.15:base_days=30
 
-        # BB lower bounce
-        bb_bounce=cur>bbl and closes[-2]<=bbl if len(closes)>=2 else False
+        # ══ SLEEPING GIANT FILTERS ══
+        # RSI must be in sweet zone (not already overbought)
+        if r>70:continue           # Already running - not a giant
+        if from_high>-5:continue   # At 52w high - not a giant
+        if from_low>120:continue   # Too far from low - missed entry
 
-        # MA50 breakout
-        ma50_break=cur>ma50 and closes[-2]<=ma50 if len(closes)>=2 else False
+        # Volume must spike
+        if vol_ratio<1.5:continue
 
-        # Accumulation check: price was low for a while
-        # Last 30 days below current MA
-        long_base=False
-        if len(closes)>=30:
-            avg_30=sum(closes[-30:])/30
-            min_30=min(closes[-30:])
-            max_30=max(closes[-30:])
-            rng_30=max_30-min_30
-            # Base = tight range below MA50
-            if rng_30/max(avg_30,1)<0.25 and avg_30<ma50*1.1:
-                long_base=True
-
-        # Score calculation
+        # Score
         score=0;reasons=[];signals=[]
 
-        # 1. Near 52-week low (most important)
-        if from_low<30:
-            score+=4;signals.append(f"Near 52w Low (+{from_low:.0f}%)")
-            reasons.append(f"52 saptaher low theke matro +{from_low:.0f}% upore - smart money kinche na")
-        elif from_low<60:
-            score+=2;signals.append(f"Low zone (+{from_low:.0f}%)")
-        elif from_low<100:
+        # 1. Near 52-week low
+        if from_low<20:
+            score+=5;signals.append(f"Near 52w Low (+{from_low:.0f}%)")
+            reasons.append(f"52w low theke matro +{from_low:.0f}% - accumulation zone")
+        elif from_low<40:
+            score+=3;signals.append(f"Low zone (+{from_low:.0f}%)")
+        elif from_low<70:
             score+=1;signals.append(f"Below high (+{from_low:.0f}%)")
 
-        # 2. Volume explosion (critical)
-        if vol_ratio>=7:
-            score+=6;signals.append(f"Vol {vol_ratio}x EXPLOSION!")
-            reasons.append(f"Volume gorore {vol_ratio}x - institutional accumulation shuru")
-        elif vol_ratio>=5:
-            score+=5;signals.append(f"Vol {vol_ratio}x")
-            reasons.append(f"Volume gorore {vol_ratio}x - strong buying interest")
+        # 2. Volume spike
+        if vol_ratio>=5:
+            score+=6;signals.append(f"Vol {vol_ratio}x EXPLOSION")
+            reasons.append(f"Volume gorore {vol_ratio}x - institutional entry shuru")
         elif vol_ratio>=3:
             score+=4;signals.append(f"Vol {vol_ratio}x")
-            reasons.append(f"Volume gorore {vol_ratio}x - above average buying")
+            reasons.append(f"Volume gorore {vol_ratio}x - strong buying")
         elif vol_ratio>=2:
-            score+=2;signals.append(f"Vol {vol_ratio}x")
-        else:
-            continue  # Volume must spike
+            score+=3;signals.append(f"Vol {vol_ratio}x")
+        elif vol_ratio>=1.5:
+            score+=1;signals.append(f"Vol {vol_ratio}x")
 
-        # 3. RSI in sweet zone
+        # 3. RSI in sweet zone (30-60)
         if r<30:
-            score+=4;signals.append(f"RSI:{r} Oversold!")
-            reasons.append(f"RSI {r} - heavily oversold, bounce imminent")
+            score+=5;signals.append(f"RSI:{r} Oversold!")
+            reasons.append(f"RSI {r} - heavily oversold, bounce ready")
         elif 30<=r<45:
-            score+=3;signals.append(f"RSI:{r} Recovery")
+            score+=4;signals.append(f"RSI:{r} Recovery")
             reasons.append(f"RSI {r} - oversold theke recovery shuru")
         elif 45<=r<60:
             score+=2;signals.append(f"RSI:{r} OK")
-            reasons.append(f"RSI {r} - momentum building")
-        elif r>=75:
-            score-=2;signals.append(f"RSI:{r} OB")
+        # RSI 60-70 = 0 points (neutral)
 
         # 4. Fresh EMA crossover (strongest signal)
         if fresh_cross:
             score+=5;signals.append("Fresh EMA Cross!")
-            reasons.append("EMA9 eikhuni EMA21 cross korche - strongest buy signal")
-        elif ema_bull:
+            reasons.append("EMA9 eikhuni EMA21 cross korche - strongest signal")
+        elif e9>e21:
             score+=2;signals.append("EMA Bull")
 
-        # 5. MACD turning positive
-        if hist>0 and ml>sl_:
+        # 5. MACD
+        if mh>0 and ml>sl_:
             score+=3;signals.append("MACD Bull Cross")
-            reasons.append("MACD bullish crossover - momentum confirm")
-        elif hist>0:
-            score+=2;signals.append("MACD Positive")
-        elif hist<0 and hist>-0.1:
+            reasons.append("MACD bullish crossover confirmed")
+        elif mh>0:
+            score+=1;signals.append("MACD Positive")
+        elif mh<0 and mh>-0.1:
             score+=1;signals.append("MACD Near Zero")
+        elif mh<0:
+            score-=1  # negative MACD = penalty
 
         # 6. BB lower bounce
-        if bb_bounce:
-            score+=3;signals.append("BB Bounce!")
-            reasons.append("BB lower band theke bounce - oversold reversal")
-        elif cur<bbm:
-            score+=1;signals.append("Below BB Mid")
+        if live_price<bbl:
+            score+=3;signals.append("BB Oversold!")
+            reasons.append("BB lower theke niche - extreme oversold")
+        elif live_price<bbm:
+            score+=2;signals.append("Below BB Mid")
+            reasons.append("BB mid er niche - oversold zone")
 
-        # 7. MA50 breakout
-        if ma50_break:
-            score+=3;signals.append("MA50 Break!")
-            reasons.append("MA50 er upore uthche - medium term trend change")
+        # 7. Base pattern
+        if base_days>0:
+            score+=2;signals.append(f"Base {base_days}d")
+            reasons.append(f"{base_days} din er tight base - parabolic ready")
 
-        # 8. Long base (accumulation)
-        if long_base:
-            score+=2;signals.append("Base Pattern")
-            reasons.append("Dorghodin base baniyeche - parabolic move er aga")
-
-        # 9. Price change today
-        chg=s['change']
-        if 2<chg<=8:score+=2;signals.append(f"+{chg:.1f}% today")
-        elif chg>8:score+=1;signals.append(f"+{chg:.1f}% (high)")
-        elif chg<0:score-=1
+        # 8. Price change
+        if 1<live_chg<=5:score+=2;signals.append(f"+{live_chg:.1f}% today")
+        elif live_chg>5:score+=1;signals.append(f"+{live_chg:.1f}%")
 
         if score<10:continue
 
-        # TP/SL based on strategy
-        sl=round(w52_low*1.02,2)  # SL just above 52w low
-        risk=cur-sl
-        if risk<=0:risk=cur*0.10
-        tp1=round(max(cur*(1+TP1_MIN),cur+risk*1.5),2)
-        tp2=round(max(cur*(1+TP2_MIN),cur+risk*3),2)
-        tp3=round(max(cur*1.50,cur+risk*5),2)
-        tp4=round(max(cur*2.00,cur+risk*8),2)  # Parabolic target
+        # SL must be BELOW entry (important fix!)
+        sl_val=round(w52_low*0.98,2)
+        if sl_val>=live_price:
+            sl_val=round(live_price*0.92,2)  # fallback: 8% below entry
+
+        risk=live_price-sl_val
+        if risk<=0:risk=live_price*0.08
+
+        tp1=round(max(live_price*(1+TP1_MIN),live_price+risk*1.5),2)
+        tp2=round(max(live_price*(1+TP2_MIN),live_price+risk*3),2)
+        tp3=round(max(live_price*1.50,live_price+risk*5),2)
+        tp4=round(max(live_price*2.00,live_price+risk*8),2)
 
         giants.append({
             **s,'score':score,'signals':signals,'reasons':reasons,
-            'entry':cur,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3,'tp4':tp4,
-            'w52_high':w52_high,'w52_low':w52_low,
+            'entry':live_price,'sl':sl_val,'tp1':tp1,'tp2':tp2,'tp3':tp3,'tp4':tp4,
+            'w52_high':round(w52_high,2),'w52_low':round(w52_low,2),
             'from_low':from_low,'from_high':from_high,
-            'vol_ratio':vol_ratio,'rsi':r,'ema9':e9,'ema21':e21,
-            'fresh_cross':fresh_cross,'long_base':long_base,
-            'ma50':ma50,'hist':hist,
+            'vol_ratio':vol_ratio,'rsi':r,'ema9':round(e9,2),'ema21':round(e21,2),
+            'fresh_cross':fresh_cross,'long_base':base_days>0,
+            'ma50':round(ma50_val,2),'macd_hist':round(mh,3),
         })
 
     giants.sort(key=lambda x:x['score'],reverse=True)
-    return giants[:10]
+    return giants[:8]
+
 
 def fmt_giant(s):
     tp1p=round((s['tp1']-s['ltp'])/s['ltp']*100,1)
