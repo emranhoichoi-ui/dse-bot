@@ -1,212 +1,141 @@
 """
-DSE Historical Data Gap Filler
-Jan 22, 2026 theke ekhon porjonto missing data fill kore
-stocksurferbd library use kore DSE theke data nabe
+DSE Gap Filler v2
+Uses dsebd.org/day_end_archive.php to fill missing dates
+Runs in GitHub Actions (different IP than Railway)
 """
 import os,csv,requests,time
-from datetime import datetime,timedelta
 from bs4 import BeautifulSoup
+from datetime import datetime,timedelta
 
-HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-DATA_DIR='data'
-GAP_START='2026-01-23'  # day after our data ends
+HEADERS={
+    "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language":"en-US,en;q=0.5",
+}
+DATA_DIR="data"
 
-def get_stock_list():
-    """data/ folder theke sob stock symbol nao"""
-    stocks=[]
-    if not os.path.exists(DATA_DIR):return stocks
-    for f in os.listdir(DATA_DIR):
-        if f.endswith('.csv') and f!='README.md':
-            stocks.append(f.replace('.csv',''))
-    return sorted(stocks)
+def get_trading_dates(from_date, to_date):
+    """Sun-Thu dates generate koro (DSE trading days)"""
+    dates=[]
+    current=datetime.strptime(from_date,"%Y-%m-%d")
+    end=datetime.strptime(to_date,"%Y-%m-%d")
+    while current<=end:
+        # 0=Mon,1=Tue,2=Wed,3=Thu,6=Sun in Python weekday
+        # DSE: Sun=6, Mon=0, Tue=1, Wed=2, Thu=3
+        if current.weekday() in(0,1,2,3,6):
+            dates.append(current.strftime("%Y-%m-%d"))
+        current+=timedelta(days=1)
+    return dates
 
-def get_last_date(symbol):
-    """Stock er CSV file er last date bero koro"""
-    path=f"{DATA_DIR}/{symbol}.csv"
-    if not os.path.exists(path):return None
-    with open(path,'r') as f:
-        rows=list(csv.DictReader(f))
-    if not rows:return None
-    return rows[-1]['Date']
-
-def fetch_dse_history(symbol,from_date,to_date):
-    """
-    dsebd.org theke historical data fetch kore
-    URL: https://www.dsebd.org/dseX_share.php
-    """
-    results=[]
+def fetch_all_stocks_for_date(date):
+    """Ek diner sob stock er data ane"""
+    url=f"https://www.dsebd.org/day_end_archive.php?endDate={date}&archive=data"
     try:
-        # Try dsebd.org company page
-        url=f"https://www.dsebd.org/displayCompany.php?name={symbol}"
         r=requests.get(url,headers=HEADERS,timeout=20)
-        soup=BeautifulSoup(r.text,'html.parser')
+        if r.status_code!=200:
+            print(f"  {date}: HTTP {r.status_code}")
+            return{}
+        soup=BeautifulSoup(r.text,"html.parser")
+        tables=soup.find_all("table")
+        if not tables:
+            print(f"  {date}: No tables found")
+            return{}
 
-        # Find price history table
-        tables=soup.find_all('table')
+        stocks={}
         for table in tables:
-            rows=table.find_all('tr')
+            rows=table.find_all("tr")
             for row in rows[1:]:
-                cols=row.find_all('td')
-                if len(cols)<6:continue
+                cols=row.find_all("td")
+                if len(cols)<7:continue
                 try:
-                    date_str=cols[0].get_text(strip=True)
-                    # Parse various date formats
-                    for fmt in['%d %b %Y','%Y-%m-%d','%d/%m/%Y','%B %d, %Y']:
-                        try:
-                            dt=datetime.strptime(date_str,fmt)
-                            date_iso=dt.strftime('%Y-%m-%d')
-                            break
-                        except:continue
-                    else:continue
-
-                    if date_iso<from_date or date_iso>to_date:continue
-
-                    op=float(cols[1].get_text(strip=True).replace(',','') or 0)
-                    hi=float(cols[2].get_text(strip=True).replace(',','') or 0)
-                    lo=float(cols[3].get_text(strip=True).replace(',','') or 0)
-                    cl=float(cols[4].get_text(strip=True).replace(',','') or 0)
-                    vol=float(cols[5].get_text(strip=True).replace(',','') or 0)
-
+                    sym=cols[1].get_text(strip=True).upper()
+                    if not sym or len(sym)<2:continue
+                    hi  =float(cols[2].get_text(strip=True).replace(",","") or 0)
+                    lo  =float(cols[3].get_text(strip=True).replace(",","") or 0)
+                    cl  =float(cols[4].get_text(strip=True).replace(",","") or 0)
+                    yday=float(cols[5].get_text(strip=True).replace(",","") or 0)
+                    vol =float(cols[6].get_text(strip=True).replace(",","") or 0)
                     if cl>0:
-                        results.append({
-                            'Date':date_iso,'Open':op,'High':hi,
-                            'Low':lo,'Close':cl,'Volume':int(vol)
-                        })
+                        op=yday if yday>0 else cl
+                        stocks[sym]={
+                            "Date":date,"Open":round(op,2),
+                            "High":round(hi,2) if hi>0 else round(cl,2),
+                            "Low":round(lo,2) if lo>0 else round(cl,2),
+                            "Close":round(cl,2),"Volume":int(vol)
+                        }
                 except:continue
-
-        if results:
-            results.sort(key=lambda x:x['Date'])
-            print(f"  dsebd.org: {len(results)} rows fetched")
-            return results
-
+        return stocks
     except Exception as e:
-        print(f"  dsebd error: {e}")
+        print(f"  {date}: Error - {e}")
+        return{}
 
-    return[]
-
-def fetch_amarstock(symbol,from_date,to_date):
-    """AmarStock theke data fetch"""
-    results=[]
-    try:
-        url=f"https://www.amarstock.com/api/history/{symbol}"
-        params={'from':from_date,'to':to_date,'interval':'day'}
-        r=requests.get(url,headers=HEADERS,params=params,timeout=20)
-        if r.status_code==200:
-            data=r.json()
-            for item in data:
-                results.append({
-                    'Date':item.get('date',''),
-                    'Open':item.get('open',0),
-                    'High':item.get('high',0),
-                    'Low':item.get('low',0),
-                    'Close':item.get('close',0),
-                    'Volume':item.get('volume',0),
-                })
-    except Exception as e:
-        print(f"  amarstock error: {e}")
-    return results
-
-def fetch_stocksurferbd(symbol,from_date,to_date):
-    """stocksurferbd library use kore data nao"""
-    results=[]
-    try:
-        from stocksurferbd import PriceData
-        loader=PriceData()
-        df=loader.get_history_data(symbol=symbol,market='DSE')
-        if df is not None and len(df)>0:
-            for _,row in df.iterrows():
-                date_str=str(row.name)[:10] if hasattr(row,'name') else str(row.get('Date',''))
-                if date_str<from_date or date_str>to_date:continue
-                results.append({
-                    'Date':date_str,
-                    'Open':float(row.get('Open',row.get('open',0))),
-                    'High':float(row.get('High',row.get('high',0))),
-                    'Low':float(row.get('Low',row.get('low',0))),
-                    'Close':float(row.get('Close',row.get('close',0))),
-                    'Volume':int(row.get('Volume',row.get('volume',0))),
-                })
-            results.sort(key=lambda x:x['Date'])
-            if results:print(f"  stocksurferbd: {len(results)} rows")
-    except Exception as e:
-        print(f"  stocksurferbd error: {e}")
-    return results
-
-def append_to_csv(symbol,new_rows):
-    """CSV file e nতুন rows add koro (duplicate skip)"""
+def get_existing_dates(symbol):
     path=f"{DATA_DIR}/{symbol}.csv"
-    if not os.path.exists(path):return 0
+    if not os.path.exists(path):return set()
+    with open(path,"r") as f:
+        rows=list(csv.DictReader(f))
+    return{row["Date"] for row in rows}
 
-    # Existing dates
-    with open(path,'r') as f:
-        existing=list(csv.DictReader(f))
-    existing_dates={row['Date'] for row in existing}
-
-    # Filter new rows
-    to_add=[r for r in new_rows if r['Date'] not in existing_dates]
-    if not to_add:return 0
-
-    # Append
-    with open(path,'a',newline='') as f:
-        writer=csv.DictWriter(f,fieldnames=['Date','Open','High','Low','Close','Volume'])
-        for row in sorted(to_add,key=lambda x:x['Date']):
-            writer.writerow(row)
-
-    return len(to_add)
+def append_row(symbol,row):
+    path=f"{DATA_DIR}/{symbol}.csv"
+    if not os.path.exists(path):return
+    with open(path,"a",newline="") as f:
+        w=csv.writer(f)
+        w.writerow([row["Date"],row["Open"],row["High"],row["Low"],row["Close"],row["Volume"]])
 
 def fill_gaps():
-    today=datetime.now().strftime('%Y-%m-%d')
-    stocks=get_stock_list()
-    print(f"Total stocks to process: {len(stocks)}")
-    print(f"Looking for gaps from {GAP_START} to {today}")
+    today=datetime.now().strftime("%Y-%m-%d")
+    
+    # Find the gap: Jan 22 2026 to today
+    gap_start="2026-01-23"
+    
+    # Get trading dates in the gap
+    dates=get_trading_dates(gap_start,today)
+    print(f"Trading dates to fill: {len(dates)}")
+    print(f"From {dates[0]} to {dates[-1]}")
     print()
-
-    filled=0;skipped=0;errors=0
-
-    for i,sym in enumerate(stocks):
-        last=get_last_date(sym)
-        if not last:skipped+=1;continue
-
-        # Check if gap exists
-        last_dt=datetime.strptime(last,'%Y-%m-%d')
-        gap_start_dt=datetime.strptime(GAP_START,'%Y-%m-%d')
-        today_dt=datetime.now()
-
-        # If last date is recent (within 3 days), skip
-        if (today_dt-last_dt).days<=3:
-            skipped+=1
-            if i%50==0:print(f"[{i+1}/{len(stocks)}] {sym}: up to date ({last})")
-            continue
-
-        from_d=max(last,'2026-01-23')
-        # Add 1 day to avoid duplicate
-        from_dt=datetime.strptime(from_d,'%Y-%m-%d')+timedelta(days=1)
-        from_d=from_dt.strftime('%Y-%m-%d')
-
-        print(f"[{i+1}/{len(stocks)}] {sym}: gap from {from_d} to {today}")
-
-        # Try multiple sources
-        new_rows=[]
-
-        # Source 1: stocksurferbd
-        if not new_rows:
-            new_rows=fetch_stocksurferbd(sym,from_d,today)
-            time.sleep(0.5)
-
-        # Source 2: dsebd.org
-        if not new_rows:
-            new_rows=fetch_dse_history(sym,from_d,today)
+    
+    # Track which dates already have data
+    # Check a sample stock
+    sample_stock="BRACBANK"
+    existing=get_existing_dates(sample_stock)
+    dates_to_fill=[d for d in dates if d not in existing]
+    
+    print(f"Dates already filled: {len(dates)-len(dates_to_fill)}")
+    print(f"Dates to fill: {len(dates_to_fill)}")
+    print()
+    
+    if not dates_to_fill:
+        print("All dates already filled!")
+        return
+    
+    filled_dates=0
+    total_rows=0
+    
+    for i,date in enumerate(dates_to_fill):
+        print(f"[{i+1}/{len(dates_to_fill)}] Fetching {date}...")
+        stocks=fetch_all_stocks_for_date(date)
+        
+        if not stocks:
+            print(f"  No data for {date} (market may have been closed)")
             time.sleep(1)
-
-        if new_rows:
-            added=append_to_csv(sym,new_rows)
-            print(f"  Added {added} rows to {sym}.csv")
-            filled+=1
-        else:
-            print(f"  No data found for {sym}")
-            errors+=1
-
+            continue
+        
+        # Add data to each stock file
+        added=0
+        for sym,row in stocks.items():
+            existing_sym=get_existing_dates(sym)
+            if date not in existing_sym:
+                append_row(sym,row)
+                added+=1
+        
+        total_rows+=added
+        filled_dates+=1
+        print(f"  Added {added} stock rows for {date}")
+        time.sleep(2)  # Respectful delay
+    
     print(f"\n=== DONE ===")
-    print(f"Filled: {filled} | Skipped (up-to-date): {skipped} | No data: {errors}")
+    print(f"Filled {filled_dates} dates, {total_rows} total rows added")
 
-if __name__=='__main__':
+if __name__=="__main__":
     fill_gaps()
