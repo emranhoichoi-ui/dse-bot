@@ -1032,81 +1032,8 @@ async def cmd_penny(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
 # ══════════════════════
 #  SCHEDULER + MAIN
 # ══════════════════════
-async def cmd_giant(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text(
-        "Sleeping Giant Scanner cholche...\n"
-        "15ti winning stock er pattern diye khujche...\n"
-        "(2-3 minit lagbe)"
-    )
-    stocks=fetch_stocks()
-    if not stocks:await u.message.reply_text("Data nei.");return
-    giants=scan_sleeping_giants(stocks)
-    if not giants:
-        await u.message.reply_text(
-            "Aj kono Sleeping Giant nei.\n\n"
-            "Karon: DSE te ekhon emon kono stock nei jeta:\n"
-            "- 52w low er kache AND\n"
-            "- Volume spike hochhe AND\n"
-            "- EMA cross korche\n\n"
-            "Kal abar try korun."
-        )
-        return
-
-    msg=f"SLEEPING GIANT SCANNER -- {len(giants)} ti Stock\n"
-    msg+="="*26+"\n"
-    msg+="15ti real winning stock er pattern:\n"
-    msg+="MEGHNAPET, BDTHAIFOOD, RDFOOD,\n"
-    msg+="NAHEEACP, ASIATICLAB er moto\n\n"
-
-    for s in giants:msg+=fmt_giant(s)
-
-    msg+="="*26+"\n"
-    msg+="STRATEGY:\n"
-    msg+="- Entry: EMA cross er din ba tarporer din\n"
-    msg+="- SL: 52w low er just upore\n"
-    msg+="- TP1: 8% e half sell\n"
-    msg+="- TP2: 20% e quarter sell\n"
-    msg+="- TP3/4: baki hold korun parabolic er jonno\n\n"
-    msg+="SHOBCHEYE MUHURTPORTO: Stop Loss!!!"
-
-    for i in range(0,len(msg),4000):
-        await u.message.reply_text(msg[i:i+4000])
 
 
-
-async def post_init(app):
-    init_db()
-    sched=AsyncIOScheduler(timezone='UTC')
-    sched.add_job(send_signals,'cron',hour=12,minute=0,args=[app.bot])
-    sched.add_job(auto_update_data,'cron',hour=9,minute=30,args=[app.bot])
-    sched.add_job(check_outcomes,'cron',hour=4,minute=0,args=[app.bot])
-    sched.start()
-    log.info("Scheduler ready: Signal UTC12 | Update UTC09:30 | Check UTC04")
-
-def main():
-    init_db()
-    log.info("DSE Bot v4.1 shuru...")
-    app=Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
-    app.add_handler(CommandHandler("start",   cmd_start))
-    app.add_handler(CommandHandler("signal",  cmd_signal))
-    app.add_handler(CommandHandler("breakout",cmd_breakout))
-    app.add_handler(CommandHandler("ew",      cmd_ew))
-    app.add_handler(CommandHandler("stats",   cmd_stats))
-    app.add_handler(CommandHandler("top",     cmd_top))
-    app.add_handler(CommandHandler("sell",    cmd_sell))
-    app.add_handler(CommandHandler("penny",   cmd_penny))
-    app.add_handler(CommandHandler("giant",   cmd_giant))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_message))
-    log.info("Polling shuru")
-    app.run_polling(drop_pending_updates=True)
-
-if __name__=='__main__':
-    main()
-
-# ══════════════════════════════════════
-#  SLEEPING GIANT SCANNER
-#  Based on 15 real DSE winning stocks pattern
-# ══════════════════════════════════════
 def scan_sleeping_giants(stocks):
     """
     DSE Sleeping Giant Strategy:
@@ -1301,4 +1228,78 @@ def fmt_giant(s):
         if len(s['reasons'])>1:lines.append(f"Karon 2: {s['reasons'][1]}")
     lines.append("")
     return "\n".join(lines)
+async def cmd_giant(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text(
+        "Sleeping Giant Scanner cholche...\n"
+        "15ti winning stock er pattern diye khujche...\n"
+        "(2-3 minit lagbe)"
+    )
+    stocks=fetch_stocks()
+    if not stocks:await u.message.reply_text("Data nei.");return
+    giants=scan_sleeping_giants(stocks)
+    if not giants:
+        await u.message.reply_text(
+            "Aj kono Sleeping Giant nei.\n\n"
+            "Karon: DSE te ekhon emon kono stock nei jeta:\n"
+            "- 52w low er kache AND\n"
+            "- Volume spike hochhe AND\n"
+            "- EMA cross korche\n\n"
+            "Kal abar try korun."
+        )
+        return
 
+    msg=f"SLEEPING GIANT SCANNER -- {len(giants)} ti Stock\n"
+    msg+="="*26+"\n"
+    msg+="15ti real winning stock er pattern:\n"
+    msg+="MEGHNAPET, BDTHAIFOOD, RDFOOD,\n"
+    msg+="NAHEEACP, ASIATICLAB er moto\n\n"
+
+    for s in giants:msg+=fmt_giant(s)
+
+    msg+="="*26+"\n"
+    msg+="STRATEGY:\n"
+    msg+="- Entry: EMA cross er din ba tarporer din\n"
+    msg+="- SL: 52w low er just upore\n"
+    msg+="- TP1: 8% e half sell\n"
+    msg+="- TP2: 20% e quarter sell\n"
+    msg+="- TP3/4: baki hold korun parabolic er jonno\n\n"
+    msg+="SHOBCHEYE MUHURTPORTO: Stop Loss!!!"
+
+    for i in range(0,len(msg),4000):
+        await u.message.reply_text(msg[i:i+4000])
+
+
+
+async def post_init(app):
+    init_db()
+    sched=AsyncIOScheduler(timezone='UTC')
+    sched.add_job(send_signals,'cron',hour=12,minute=0,args=[app.bot])
+    sched.add_job(auto_update_data,'cron',hour=9,minute=30,args=[app.bot])
+    sched.add_job(check_outcomes,'cron',hour=4,minute=0,args=[app.bot])
+    sched.start()
+    log.info("Scheduler ready: Signal UTC12 | Update UTC09:30 | Check UTC04")
+
+def main():
+    init_db()
+    log.info("DSE Bot v4.1 shuru...")
+    app=Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+    app.add_handler(CommandHandler("start",   cmd_start))
+    app.add_handler(CommandHandler("signal",  cmd_signal))
+    app.add_handler(CommandHandler("breakout",cmd_breakout))
+    app.add_handler(CommandHandler("ew",      cmd_ew))
+    app.add_handler(CommandHandler("stats",   cmd_stats))
+    app.add_handler(CommandHandler("top",     cmd_top))
+    app.add_handler(CommandHandler("sell",    cmd_sell))
+    app.add_handler(CommandHandler("penny",   cmd_penny))
+    app.add_handler(CommandHandler("giant",   cmd_giant))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_message))
+    log.info("Polling shuru")
+    app.run_polling(drop_pending_updates=True)
+
+if __name__=='__main__':
+    main()
+
+# ══════════════════════════════════════
+#  SLEEPING GIANT SCANNER
+#  Based on 15 real DSE winning stocks pattern
+# ══════════════════════════════════════
