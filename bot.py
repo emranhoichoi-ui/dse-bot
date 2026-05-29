@@ -239,26 +239,6 @@ def get_ind(symbol):
     elif e9<e21 and ma20<ma50:trend='down'
     else:trend='neutral'
 
-    # ══ MULTI-TIMEFRAME DOWNTREND FILTER ══
-    # Multiple conditions check kori
-    trend_ok=True
-
-    # 1. Short-term trend (EMA based)
-    if trend in('strong_down','down'):
-        trend_ok=False
-
-    # 2. 6-month trend niche + price MA200 theke 15%+ niche
-    if trend_6m=='down' and trend_12m=='down' and vs_ma200<-15:
-        trend_ok=False
-
-    # 3. 3-month peak theke 15%+ niche + bearish MACD
-    if from_peak<-15 and mh<0:
-        trend_ok=False
-
-    # 4. Price MA100 er niche AND MA200 er niche = strong downtrend
-    if last<ma100 and last<ma200 and trend_12m=='down':
-        trend_ok=False
-
     # Volume
     avg_vol=sum(vols[-20:])/max(len(vols[-20:]),1) if vols else 0
     vol_ratio=round((vols[-1] if vols else 0)/avg_vol,2) if avg_vol>0 else 0
@@ -283,6 +263,25 @@ def get_ind(symbol):
 
     # Price vs MA200 (key long-term trend indicator)
     vs_ma200=round((last-ma200)/ma200*100,1) if ma200>0 else 0
+
+    # ══ MULTI-TIMEFRAME DOWNTREND FILTER ══
+    trend_ok=True
+
+    # 1. Short-term downtrend
+    if trend in('strong_down','down'):
+        trend_ok=False
+
+    # 2. 6m + 12m downtrend AND MA200 theke 15%+ niche
+    if trend_6m=='down' and trend_12m=='down' and vs_ma200<-15:
+        trend_ok=False
+
+    # 3. 3-month peak theke 15%+ niche + MACD bearish
+    if from_peak<-15 and mh<0:
+        trend_ok=False
+
+    # 4. MA100 + MA200 er niche AND 12m downtrend
+    if last<ma100 and last<ma200 and trend_12m=='down':
+        trend_ok=False
 
     # EW Detection (improved)
     ew_phase,ew_desc=detect_ew(closes,highs,lows)
@@ -1302,3 +1301,4 @@ def fmt_giant(s):
         if len(s['reasons'])>1:lines.append(f"Karon 2: {s['reasons'][1]}")
     lines.append("")
     return "\n".join(lines)
+
