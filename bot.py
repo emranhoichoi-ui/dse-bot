@@ -1425,6 +1425,16 @@ def scan_momentum(stocks):
                 score+=1;signals.append("Daily Trend Up")
 
         if score<8:continue
+
+        # TP1 must be at least 8% from entry
+        # Check nearest resistance - if too close, skip
+        ltp_=s['ltp']
+        nearest_r=daily_ind.get('nearest_r1',ltp_*1.15) if daily_ind.get('ok') else ltp_*1.15
+        min_tp1=ltp_*1.08
+        # If resistance is within 5% - not enough room
+        if nearest_r < min_tp1:
+            continue  # Skip - resistance too close
+
         s['daily_ind']=daily_ind  # Save for fmt_momentum
 
         # TP/SL
@@ -1467,10 +1477,12 @@ def fmt_momentum(s):
     nearest_r3=ind.get('nearest_r3',ltp*1.50) if ind.get('ok') else ltp*1.50
     nearest_r1_label=ind.get('nearest_r1_label','') if ind.get('ok') else ''
 
-    # TP just below resistance (2% below)
-    tp1=round(min(s['tp1'], nearest_r1*0.98),2)
-    tp2=round(min(s['tp2'], nearest_r2*0.98),2)
-    tp3=round(min(s['tp3'], nearest_r3*0.98),2)
+    # TP just below resistance (2% below) but minimum 8%
+    tp1_from_r=round(nearest_r1*0.98,2)
+    tp1_min=round(ltp*1.08,2)
+    tp1=round(max(tp1_from_r, tp1_min),2)  # at least 8%
+    tp2=round(max(s['tp2'], ltp*1.20),2)   # at least 20%
+    tp3=round(max(s['tp3'], ltp*1.35),2)   # at least 35%
 
     tp1p=round((tp1-ltp)/ltp*100,1)
     tp2p=round((tp2-ltp)/ltp*100,1)
