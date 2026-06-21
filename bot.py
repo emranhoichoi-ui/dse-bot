@@ -1,5 +1,6 @@
 import os,logging,requests,re,time,json,sqlite3,csv,io
-import certifi
+import certifi,urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Railway container er purono SSL CA bundle fix kora hocche
 os.environ['SSL_CERT_FILE']=certifi.where()
 os.environ['REQUESTS_CA_BUNDLE']=certifi.where()
@@ -555,7 +556,7 @@ def fetch_stocks():
     log.info("DSE fetch...")
     url="https://www.dsebd.org/latest_share_price_scroll_by_value.php"
     try:
-        r=requests.get(url,headers=HEADERS,timeout=30);r.raise_for_status()
+        r=requests.get(url,headers=HEADERS,timeout=30,verify=False);r.raise_for_status()
         soup=BeautifulSoup(r.text,'html.parser')
         stocks=[]
         for row in soup.find_all('tr'):
@@ -593,7 +594,7 @@ def fetch_stocks():
 
 def get_dsex():
     try:
-        r=requests.get("https://www.dsebd.org",headers=HEADERS,timeout=12)
+        r=requests.get("https://www.dsebd.org",headers=HEADERS,timeout=12,verify=False)
         for pat in[r'DSEX[^\d]*(\d{4,6}\.?\d{0,2})',r'>(\d{4,6}\.\d{2})<']:
             for m in re.findall(pat,r.text):
                 try:
