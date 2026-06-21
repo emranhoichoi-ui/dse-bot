@@ -1,4 +1,8 @@
 import os,logging,requests,re,time,json,sqlite3,csv,io
+import certifi
+# Railway container er purono SSL CA bundle fix kora hocche
+os.environ['SSL_CERT_FILE']=certifi.where()
+os.environ['REQUESTS_CA_BUNDLE']=certifi.where()
 from bs4 import BeautifulSoup
 from datetime import datetime,timedelta
 import pytz
@@ -636,19 +640,22 @@ def analyze(stocks,use_hist=False):
             elif cs<=-6:score+=cs;tags.append(ind['candle'])
             elif cs<0:score+=cs;tags.append(ind['candle'])
 
+            # Dynamic weights from learning
+            w=load_weights()
+
             # RSI
             r=ind['rsi']
-            if r<30:score+=4;tags.append(f"RSI:{r} Oversold");inds.append('rsi_os')
-            elif 30<=r<45:score+=3;tags.append(f"RSI:{r}");inds.append('rsi_good')
-            elif 45<=r<65:score+=1;tags.append(f"RSI:{r}")
-            elif r>=75:score-=3;tags.append(f"RSI:{r} OB");warnings.append(f"RSI {r} overbought")
+            if r<30:score+=w.get('rsi_os',4);tags.append(f"RSI:{r} Oversold");inds.append('rsi_os')
+            elif 30<=r<45:score+=w.get('rsi_good',3);tags.append(f"RSI:{r}");inds.append('rsi_good')
+            elif 45<=r<65:score+=w.get('rsi_ok',1);tags.append(f"RSI:{r}")
+            elif r>=75:score+=w.get('rsi_overbought',-3);tags.append(f"RSI:{r} OB");warnings.append(f"RSI {r} overbought")
             else:tags.append(f"RSI:{r}")
 
             # MACD
             if ind['macd_h']>0 and ind['macd']>ind['macd_sig']:
-                score+=3;tags.append("MACD Bull");inds.append('macd_bull')
+                score+=w.get('macd_bull',3);tags.append("MACD Bull");inds.append('macd_bull')
             elif ind['macd_h']<0 and ind['macd']<ind['macd_sig']:
-                score-=3;tags.append("MACD Bear")
+                score+=w.get('macd_bear',-3);tags.append("MACD Bear")
 
             # BB
             if ind['bb_pos']=='lower':score+=3;tags.append("BB Lower");inds.append('bb_low')
@@ -1608,12 +1615,146 @@ async def cmd_giant(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
 
 
+
+# ══════════════════════════════════════
+#  RULE-BASED ADAPTIVE LEARNING
+# ══════════════════════════════════════
+WEIGHTS_FILE='/tmp/dse_weights.json'
+DEFAULT_WEIGHTS={
+    'rsi_os':4,'rsi_good':3,'rsi_ok':1,'rsi_overbought':-3,
+    'macd_bull':3,'macd_bear':-3,
+    'bb_low':3,'bb_upper':-2,
+    't_sup':5,'t_up':2,'t_sdown':-5,'t_down':-2,
+    'ew_b':5,'ew_i':3,'fib_s':2,'fake_b':-5,
+}
+
+def load_weights():
+    try:
+        if os.path.exists(WEIGHTS_FILE):
+            with open(WEIGHTS_FILE,'r') as f:
+                saved=json.load(f)
+            w=DEFAULT_WEIGHTS.copy()
+            w.update(saved)
+            return w
+    except:pass
+    return DEFAULT_WEIGHTS.copy()
+
+def save_weights(weights):
+    try:
+        with open(WEIGHTS_FILE,'w') as f:
+            json.dump(weights,f,indent=2)
+    except:pass
+
+def analyze_and_adjust():
+    try:
+        conn=sqlite3.connect(DB_PATH)
+        c=conn.cursor()
+        thirty_ago=(datetime.now(BD_TZ)-timedelta(days=30)).strftime('%Y-%m-%d')
+        rows=c.execute(
+            'SELECT indicators,outcome FROM signals WHERE outcome!="pending" AND date>=? LIMIT 200',
+            (thirty_ago,)).fetchall()
+        conn.close()
+        if len(rows)<10:
+            return None
+        ind_stats={}
+        for inds_json,outcome in rows:
+            try:
+                inds=json.loads(inds_json) if inds_json else []
+                for ind in inds:
+                    if ind not in ind_stats:
+                        ind_stats[ind]={'w':0,'l':0}
+                    if outcome=='win':
+                        ind_stats[ind]['w']+=1
+                    else:
+                        ind_stats[ind]['l']+=1
+            except:continue
+        weights=load_weights()
+        adjustments=[]
+        for ind,s in ind_stats.items():
+            total=s['w']+s['l']
+            if total<5:continue
+            wr=s['w']/total
+            cur=weights.get(ind,0)
+            if wr>=0.70 and cur<8:
+                weights[ind]=min(cur+1,8)
+                adjustments.append(f"{ind}:{cur}to{weights[ind]} WR:{int(wr*100)}%")
+            elif wr<=0.35 and cur>-6:
+                weights[ind]=max(cur-1,-6)
+                adjustments.append(f"{ind}:{cur}to{weights[ind]} WR:{int(wr*100)}%")
+        save_weights(weights)
+        return{'analyzed':len(rows),'adjustments':adjustments}
+    except Exception as e:
+        log.error(f"Learning: {e}")
+        return None
+
+def learning_stats():
+    try:
+        conn=sqlite3.connect(DB_PATH)
+        c=conn.cursor()
+        total=c.execute('SELECT COUNT(*) FROM signals').fetchone()[0]
+        if total<5:
+            conn.close()
+            return "Data kom ache. Minimum 10 signal dorkar."
+        wins=c.execute('SELECT COUNT(*) FROM signals WHERE outcome="win"').fetchone()[0]
+        losses=c.execute('SELECT COUNT(*) FROM signals WHERE outcome="loss"').fetchone()[0]
+        pending=c.execute('SELECT COUNT(*) FROM signals WHERE outcome="pending"').fetchone()[0]
+        hs_w=c.execute('SELECT COUNT(*) FROM signals WHERE score>=15 AND outcome="win"').fetchone()[0]
+        hs_t=c.execute('SELECT COUNT(*) FROM signals WHERE score>=15 AND outcome!="pending"').fetchone()[0]
+        ls_w=c.execute('SELECT COUNT(*) FROM signals WHERE score<15 AND outcome="win"').fetchone()[0]
+        ls_t=c.execute('SELECT COUNT(*) FROM signals WHERE score<15 AND outcome!="pending"').fetchone()[0]
+        conn.close()
+        wr=round(wins/max(wins+losses,1)*100,1)
+        parts=[]
+        parts.append("Learning Analysis:")
+        parts.append(f"Total:{total} Win:{wins} Loss:{losses} Pending:{pending}")
+        parts.append(f"Win Rate: {wr}%")
+        if hs_t>0:
+            parts.append(f"High Score(15+): {round(hs_w/max(hs_t,1)*100,1)}% WR ({hs_t} signals)")
+        if ls_t>0:
+            parts.append(f"Low Score(<15): {round(ls_w/max(ls_t,1)*100,1)}% WR ({ls_t} signals)")
+        w=load_weights()
+        changed=[k+":"+str(v) for k,v in w.items() if v!=DEFAULT_WEIGHTS.get(k,0)]
+        if changed:
+            parts.append("Adjusted weights ("+str(len(changed))+"): "+" ".join(changed[:6]))
+        else:
+            parts.append("Weights: all default (need more signal data)")
+        return chr(10).join(parts)
+    except Exception as e:
+        return "Error: "+str(e)
+
+async def run_learning(bot):
+    log.info("Learning job running...")
+    result=analyze_and_adjust()
+    if result and result['adjustments']:
+        parts=["Learning Update:"]
+        parts.append("Analyzed: "+str(result['analyzed'])+" signals")
+        parts.append("Adjustments:")
+        for a in result['adjustments']:
+            parts.append("  "+a)
+        await bot.send_message(chat_id=CHAT_ID,text=chr(10).join(parts))
+
+async def cmd_learn(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text(learning_stats())
+    result=analyze_and_adjust()
+    if result:
+        if result['adjustments']:
+            parts=["Weight adjustments: "+str(len(result['adjustments']))]
+            for a in result['adjustments'][:5]:
+                parts.append("  "+a)
+            await u.message.reply_text(chr(10).join(parts))
+        else:
+            await u.message.reply_text("Weights balanced - no change needed.")
+    else:
+        await u.message.reply_text("Min 10 completed signals needed for learning.")
+
+
 async def post_init(app):
     init_db()
     sched=AsyncIOScheduler(timezone='UTC')
     sched.add_job(send_signals,'cron',hour=12,minute=0,args=[app.bot])
     sched.add_job(auto_update_data,'cron',hour=9,minute=30,args=[app.bot])
     sched.add_job(check_outcomes,'cron',hour=4,minute=0,args=[app.bot])
+    sched.add_job(run_learning,'cron',hour=3,minute=0,args=[app.bot])
     sched.start()
     log.info("Scheduler ready: Signal UTC12 | Update UTC09:30 | Check UTC04")
 
@@ -1631,6 +1772,7 @@ def main():
     app.add_handler(CommandHandler("penny",   cmd_penny))
     app.add_handler(CommandHandler("momentum",cmd_momentum))
     app.add_handler(CommandHandler("giant",   cmd_giant))
+    app.add_handler(CommandHandler("learn",   cmd_learn))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_message))
     log.info("Polling shuru")
     app.run_polling(drop_pending_updates=True)
