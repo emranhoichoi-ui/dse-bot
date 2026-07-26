@@ -79,7 +79,20 @@ def get_existing_dates(symbol):
 def append_row(symbol,row):
     path=f"{DATA_DIR}/{symbol}.csv"
     if not os.path.exists(path):return
+    # Purbe ei check chilo na - fole GitHub API die (bot.py auto_update_data)
+    # kono row add korar por file trailing newline chara thakle, ei function
+    # shei last line er shathe mishe giye CSV row corrupt kore felto
+    # (jeta RSI/MACD calculation nosto korchilo). Ekhon check kore newline
+    # add kore nei jodi dorkar hoy.
+    needs_leading_nl=False
+    if os.path.getsize(path)>0:
+        with open(path,"rb") as f:
+            f.seek(-1,2)
+            if f.read(1)!=b"\n":
+                needs_leading_nl=True
     with open(path,"a",newline="") as f:
+        if needs_leading_nl:
+            f.write("\n")
         w=csv.writer(f)
         w.writerow([row["Date"],row["Open"],row["High"],row["Low"],row["Close"],row["Volume"]])
 
