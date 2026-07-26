@@ -9,6 +9,21 @@ from datetime import datetime
 HEADERS={'User-Agent':'Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/120'}
 DATA_DIR='data'
 
+def is_dse_trading_day(date_str):
+    """Shudhu Fri/Sat na, Eid/Puja/sorkari chhutir din-o (jegulo Sun-Thu
+    er modhdhe porte pare) dhorte dsebd.org er day_end_archive.php
+    directly check kori - shei din shotti trade hoyeche kina."""
+    try:
+        url=f"https://www.dsebd.org/day_end_archive.php?endDate={date_str}&archive=data"
+        r=requests.get(url,headers=HEADERS,timeout=15)
+        if r.status_code!=200:return None
+        soup=BeautifulSoup(r.text,'html.parser')
+        for t in soup.find_all('table'):
+            if len(t.find_all('tr'))>1:return True
+        return False
+    except Exception:
+        return None
+
 def fetch_today():
     """dsebd.org theke ajer sob stock er data ano"""
     url="https://www.dsebd.org/latest_share_price_scroll_by_value.php"
@@ -73,13 +88,40 @@ def update_csv(symbol,row):
         if row['Date'] in line:
             return False
 
+    # File trailing newline chara thakle age newline add kori - noile
+    # notun row age-er last line er shathe mishe CSV corrupt hoye jay
+    needs_leading_nl=False
+    if os.path.getsize(path)>0:
+        with open(path,'rb') as f:
+            f.seek(-1,2)
+            if f.read(1)!=b'\n':
+                needs_leading_nl=True
+
     with open(path,'a',newline='') as f:
+        if needs_leading_nl:
+            f.write('\n')
         w=csv.writer(f)
         w.writerow([row['Date'],row['Open'],row['High'],row['Low'],row['Close'],row['Volume']])
     return True
 
 def main():
     print("DSE data update shuru...")
+    # DSE kokhono Fri/Sat trade hoy na - ei script age eta check korto na,
+    # tai shuk/shoni o "ajker" data hishebe stale/bhul row likhe dicchilo,
+    # jeta RSI/MACD calculation nosto korar main karon chilo.
+    today_wd=datetime.now().weekday()  # 0=Mon..4=Fri,5=Sat,6=Sun
+    if today_wd in(4,5):
+        print("Aj Fri/Sat - DSE bondho, update skip kora holo")
+        return
+
+    # Eid/Puja/sorkari chhutir din-o (Sun-Thu hoyeo) DSE bondho thakte
+    # pare - eta dhorar jonno real check kori.
+    today=datetime.now().strftime('%Y-%m-%d')
+    trading=is_dse_trading_day(today)
+    if trading is False:
+        print(f"Aj ({today}) DSE chhuti (holiday) - update skip kora holo")
+        return
+
     stocks=fetch_today()
     if not stocks:
         print("Kono data pawa jaini - DSE bondho thakte pare")
