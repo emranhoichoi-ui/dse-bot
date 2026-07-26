@@ -44,18 +44,27 @@ def init_db():
         date TEXT,symbol TEXT,signal_type TEXT,
         entry REAL,sl REAL,tp1 REAL,tp2 REAL,score REAL,
         indicators TEXT,outcome TEXT DEFAULT 'pending',
-        outcome_pct REAL DEFAULT 0,check_date TEXT,created_at TEXT)''')
+        outcome_pct REAL DEFAULT 0,check_date TEXT,created_at TEXT,
+        scanner TEXT DEFAULT 'analyze')''')
+    # Purono DB te scanner column na thakle add kori (migration)
+    try:
+        c.execute("ALTER TABLE signals ADD COLUMN scanner TEXT DEFAULT 'analyze'")
+    except:pass
+    # Volume spike dedup table - ek din e ekbar e alert jay
+    c.execute('''CREATE TABLE IF NOT EXISTS vol_alerts(
+        date TEXT,symbol TEXT,alert_vr REAL,created_at TEXT,
+        PRIMARY KEY(date,symbol))''')
     conn.commit();conn.close()
 
-def save_signal(sym,sig,entry,sl,tp1,tp2,score,inds):
+def save_signal(sym,sig,entry,sl,tp1,tp2,score,inds,scanner='analyze'):
     try:
         conn=sqlite3.connect(DB_PATH);c=conn.cursor()
         now=datetime.now(BD_TZ)
         chk=(now+timedelta(days=5)).strftime('%Y-%m-%d')
         c.execute('''INSERT INTO signals(date,symbol,signal_type,entry,sl,tp1,tp2,score,
-                     indicators,check_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                     indicators,check_date,created_at,scanner) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
                   (now.strftime('%Y-%m-%d'),sym,sig,entry,sl,tp1,tp2,
-                   score,json.dumps(inds),chk,now.isoformat()))
+                   score,json.dumps(inds),chk,now.isoformat(),scanner))
         conn.commit();conn.close()
     except:pass
 
@@ -448,6 +457,7 @@ def get_ind(symbol):
 # ══════════════════════
 def scan_breakouts(stocks):
     candidates=[]
+    w=load_weights('breakout')
     for s in stocks:
         if s['ltp']<MIN_PRICE or s['volume']<MIN_VOLUME:continue
         ind=get_ind(s['symbol'])
@@ -457,60 +467,60 @@ def scan_breakouts(stocks):
         if not ind['trend_ok']:continue  # downtrend e skip
         if ind['range_bound'] and ind['vol_ratio']<4:continue  # range-bound, low vol skip
 
-        score=0;sigs=[];reasons=[]
+        score=0;sigs=[];reasons=[];binds=[]
         ltp=s['ltp'];vr=ind['vol_ratio']
 
         # 1. Volume
-        if vr>=5:score+=8;sigs.append(f"Vol {vr}x")
-        elif vr>=3:score+=6;sigs.append(f"Vol {vr}x")
-        elif vr>=2:score+=4;sigs.append(f"Vol {vr}x")
-        elif vr>=1.5:score+=2;sigs.append(f"Vol {vr}x")
+        if vr>=5:score+=w.get('vol5',8);sigs.append(f"Vol {vr}x");binds.append('vol5')
+        elif vr>=3:score+=w.get('vol3',6);sigs.append(f"Vol {vr}x");binds.append('vol3')
+        elif vr>=2:score+=w.get('vol2',4);sigs.append(f"Vol {vr}x");binds.append('vol2')
+        elif vr>=1.5:score+=w.get('vol1_5',2);sigs.append(f"Vol {vr}x");binds.append('vol1_5')
         else:continue
 
         # 2. Base breakout
         if ind['base_days']>0:
-            score+=5;sigs.append(f"Base {ind['base_days']}d")
+            score+=w.get('base',5);sigs.append(f"Base {ind['base_days']}d");binds.append('base')
             reasons.append(f"Consolidation shesh - parabolic move shomvob")
 
         # 3. Swing high break
         sh=ind['swing_high']
         if sh>0 and ltp>=sh*0.98:
-            score+=4;sigs.append("Swing Break")
+            score+=w.get('swing_break',4);sigs.append("Swing Break");binds.append('swing_break')
             reasons.append(f"50-diner high {sh} break hoyeche")
 
         # 4. MA/EMA Trend
         tr=ind['trend']
         if tr=='strong_up':
-            score+=5;sigs.append("EMA>MA Perfect")
+            score+=w.get('trend_strong',5);sigs.append("EMA>MA Perfect");binds.append('trend_strong')
             reasons.append("Perfect MA alignment - strong uptrend")
-        elif tr=='up':score+=3;sigs.append("Trend Up")
+        elif tr=='up':score+=w.get('trend_up',3);sigs.append("Trend Up");binds.append('trend_up')
 
         # 5. RSI (not overbought for breakout)
         r=ind['rsi']
         if 50<=r<=68:
-            score+=4;sigs.append(f"RSI:{r} OK")
+            score+=w.get('rsi_ok',4);sigs.append(f"RSI:{r} OK");binds.append('rsi_ok')
             reasons.append(f"RSI {r} - breakout zone, aro upore jawar space ache")
-        elif 45<=r<50:score+=2;sigs.append(f"RSI:{r}")
-        elif r>75:score-=4;sigs.append(f"RSI:{r} Overbought!")  # penalize more
+        elif 45<=r<50:score+=w.get('rsi_low',2);sigs.append(f"RSI:{r}");binds.append('rsi_low')
+        elif r>75:score+=w.get('rsi_overbought',-4);sigs.append(f"RSI:{r} Overbought!")  # penalize more
 
         # 6. MACD
         if ind['macd_h']>0 and ind['macd']>ind['macd_sig']:
-            score+=3;sigs.append("MACD Bull")
-        elif ind['macd_h']>0:score+=1;sigs.append("MACD Up")
-        elif ind['macd_h']<0:score-=2;sigs.append("MACD Bear")
+            score+=w.get('macd_bull',3);sigs.append("MACD Bull");binds.append('macd_bull')
+        elif ind['macd_h']>0:score+=w.get('macd_up',1);sigs.append("MACD Up");binds.append('macd_up')
+        elif ind['macd_h']<0:score+=w.get('macd_bear',-2);sigs.append("MACD Bear")
 
         # 7. EW Phase
         ep=ind['ew_phase']
         if 'Wave 3/5' in ep:
-            score+=4;sigs.append("EW Impulse Up")
+            score+=w.get('ew_impulse',4);sigs.append("EW Impulse Up");binds.append('ew_impulse')
             reasons.append(ind['ew_desc'])
         elif 'Wave 2/4 Shesh' in ep:
-            score+=5;sigs.append("EW W2/4 End")
+            score+=w.get('ew_bounce',5);sigs.append("EW W2/4 End");binds.append('ew_bounce')
             reasons.append(ind['ew_desc'])
         elif 'Downtrend' in ep:
-            score-=5;sigs.append("EW Downtrend!")
+            score+=w.get('ew_down',-5);sigs.append("EW Downtrend!")
         elif 'Correction' in ep:
-            score-=2;sigs.append("EW Correction")
+            score+=w.get('ew_corr',-2);sigs.append("EW Correction")
 
         # 8. Candle
         cs=ind['candle_score']
@@ -520,15 +530,15 @@ def scan_breakouts(stocks):
 
         # 9. Fibonacci
         if ind['fib_level']!='none':
-            score+=2;sigs.append(f"Fib {ind['fib_level']}")
+            score+=w.get('fib',2);sigs.append(f"Fib {ind['fib_level']}");binds.append('fib')
             reasons.append(f"Fibonacci {ind['fib_level']} te support")
 
         # 10. BB
-        if ind['bb_pos']=='lower':score+=2;sigs.append("BB Lower")
-        elif ind['bb_pos']=='upper' and vr>3:score+=1;sigs.append("BB Upper+Vol")
+        if ind['bb_pos']=='lower':score+=w.get('bb_lower',2);sigs.append("BB Lower");binds.append('bb_lower')
+        elif ind['bb_pos']=='upper' and vr>3:score+=w.get('bb_upper_vol',1);sigs.append("BB Upper+Vol");binds.append('bb_upper_vol')
 
         # Fake breakout penalty
-        if ind['fake_break']:score-=5;sigs.append("FAKE BREAK!")
+        if ind['fake_break']:score+=w.get('fake_break',-5);sigs.append("FAKE BREAK!")
         if ind['range_bound']:sigs.append("Range-bound")
 
         if score<10:continue
@@ -540,7 +550,7 @@ def scan_breakouts(stocks):
         tp3=round(max(ltp*1.50,ltp+risk*6),2)
 
         candidates.append({
-            **s,'score':score,'sigs':sigs,'reasons':reasons,'ind':ind,
+            **s,'score':score,'sigs':sigs,'reasons':reasons,'ind':ind,'binds':binds,
             'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3,
             'vr':vr,'candle':ind['candle'],'rsi':r,'trend':tr,
             'ew_phase':ind['ew_phase'],'ew_desc':ind['ew_desc'],
@@ -835,7 +845,7 @@ def build_msg(scored,breakouts,dsex):
                     s['tp1'],s['tp2'],s['score'],s.get('inds',[]))
 
     parts=[]
-    parts.append("DSE Signal Bot v4.1")
+    parts.append("DSE Signal Bot v4.2")
     parts.append(f"Tarikh : {now}")
     parts.append(f"DSEX   : {dsex}")
     parts.append(f"Win Rate: {stats['wr']}% ({stats['wins']}W/{stats['losses']}L/{stats['pending']}P)")
@@ -886,11 +896,48 @@ def build_msg(scored,breakouts,dsex):
 # ══════════════════════
 #  AUTO UPDATE
 # ══════════════════════
+def is_dse_trading_day(date_str):
+    """
+    Shudhu Fri/Sat check korle Eid/Puja/onno sorkari chhuti (jegulo
+    Sun-Thu er modhdheo porte pare) dhora pore na. Tai dsebd.org er
+    day_end_archive.php - jeta shudhu DSE actual e trade hole entry
+    banay - direct check kori. Eta e "aj shotti trade hoyeche kina"
+    er shobcheye reliable indicator, fixed holiday calendar maintain
+    korar dorkar nei.
+    """
+    try:
+        url=f"https://www.dsebd.org/day_end_archive.php?endDate={date_str}&archive=data"
+        r=requests.get(url,headers=HEADERS,timeout=15,verify=False)
+        if r.status_code!=200:return None  # network issue - "unknown", caller decide
+        soup=BeautifulSoup(r.text,'html.parser')
+        tables=soup.find_all('table')
+        # Kono table na thakle, ba row na thakle - trade hoyni (chhuti)
+        for t in tables:
+            if len(t.find_all('tr'))>1:return True
+        return False
+    except Exception as e:
+        log.error(f"TradingDayCheck: {e}")
+        return None  # unknown - caller e defensive thakte hobe
+
 async def auto_update_data(bot):
+    # Fast pre-filter: Fri/Sat e DSE kokhono trade hoy na, extra
+    # request na kore shorashori skip kori.
+    today_wd=datetime.now(BD_TZ).weekday()  # 0=Mon..4=Fri,5=Sat,6=Sun
+    if today_wd in(4,5):
+        log.info("Auto update skip - Fri/Sat, DSE bondho")
+        return
+    today=datetime.now(BD_TZ).strftime('%Y-%m-%d')
+    # Real check: Eid/Puja/sorkari chhuti hole (Sun-Thu hoyeo) DSE
+    # bondho thakte pare - eta dhorar jonno archive check kori.
+    # None (network error) hole - age er moto e cholte dei, jate
+    # ekta network glitch e legitimate trading day skip na hoy.
+    trading=is_dse_trading_day(today)
+    if trading is False:
+        log.info(f"Auto update skip - {today} DSE chhuti (holiday)")
+        return
     log.info("Auto update...")
     stocks=fetch_stocks()
     if not stocks:return
-    today=datetime.now(BD_TZ).strftime('%Y-%m-%d')
     updated=0
     for s in stocks:
         try:
@@ -903,7 +950,11 @@ async def auto_update_data(bot):
             old=base64.b64decode(info['content']).decode('utf-8')
             if today in old:continue
             nl=f"\n{today},{s['high']},{s['high']},{s['low']},{s['ltp']},{s['volume']}"
-            enc=base64.b64encode((old.rstrip()+nl).encode()).decode()
+            # Trailing newline SHOBSHOMAI thakte hobe - noile fill_gap.py
+            # (local file append) porer bar ese ei lineর shathe mishe
+            # giye CSV row corrupt kore fele (eta e RSI/MACD bhul
+            # calculation er main karon chilo)
+            enc=base64.b64encode((old.rstrip()+nl+"\n").encode()).decode()
             requests.put(url,headers=gh,json={'message':f"Update {s['symbol']} {today}",'content':enc,'sha':info['sha']},timeout=20)
             updated+=1
         except:pass
@@ -915,11 +966,16 @@ async def auto_update_data(bot):
 # ══════════════════════
 async def send_signals(bot):
     log.info("Signal job...")
+    today=datetime.now(BD_TZ).strftime('%Y-%m-%d')
+    trading=is_dse_trading_day(today)
+    if trading is False:
+        await bot.send_message(chat_id=CHAT_ID,text=f"Aj ({today}) DSE bondho (chhuti). Kal abar signal ashbe.")
+        return
     await bot.send_message(chat_id=CHAT_ID,text="Bishleshan cholche... (3-5 minit)")
     try:
         stocks=fetch_stocks()
         if not stocks:
-            await bot.send_message(chat_id=CHAT_ID,text="Data nei. DSE bondho (Fri/Sat) ba trading hour shesh.")
+            await bot.send_message(chat_id=CHAT_ID,text="Data nei. DSE bondho ba trading hour shesh.")
             return
         dsex=get_dsex()
         global _cache;_cache={}
@@ -964,6 +1020,97 @@ async def check_outcomes(bot):
         log.error(f"Outcome: {e}")
 
 # ══════════════════════
+#  VOLUME SPIKE EARLY ALERT
+#  Boro move howar AGE volume spike dhorte chai -
+#  tai price change onek beshi hoye jawar age e alert pathai
+# ══════════════════════
+VOL_SPIKE_MIN_RATIO=2.5   # 20-diner avg volume er koto guun beshi hote hobe
+VOL_SPIKE_MAX_CHANGE=4.0  # daam ei % er beshi already move kore fele thakle ei ta "early" na, "SIGNAL" scanner dekhbe
+
+def already_alerted(symbol,today):
+    try:
+        conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+        row=c.execute('SELECT 1 FROM vol_alerts WHERE date=? AND symbol=?',(today,symbol)).fetchone()
+        conn.close()
+        return row is not None
+    except:return False
+
+def mark_alerted(symbol,today,vr):
+    try:
+        conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+        c.execute('INSERT OR IGNORE INTO vol_alerts(date,symbol,alert_vr,created_at) VALUES(?,?,?,?)',
+                  (today,symbol,vr,datetime.now(BD_TZ).isoformat()))
+        conn.commit();conn.close()
+    except:pass
+
+def scan_volume_spikes(stocks):
+    """
+    Early-stage volume spike khoje - jekhane price ekhono beshi otheni
+    (tai eta 'boro move howar age er' signal, /breakout er moto already-moved na)
+    """
+    spikes=[]
+    for s in stocks:
+        if s['ltp']<MIN_PRICE or s['volume']<MIN_VOLUME:continue
+        if abs(s['change'])>VOL_SPIKE_MAX_CHANGE:continue  # already onek move kore fellese - late
+        data=get_hist(s['symbol'])
+        if not data or len(data['vols'])<20:continue
+        vols=data['vols']
+        avg_vol=sum(vols[-20:])/20
+        if avg_vol<=0:continue
+        vr=round(s['volume']/avg_vol,2)
+        if vr<VOL_SPIKE_MIN_RATIO:continue
+
+        closes=data['closes']
+        r=rsi(closes) if len(closes)>=15 else 50.0
+        tr='neutral'
+        if len(closes)>=21:
+            e9=ema(closes,9);e21=ema(closes,21)
+            tr='up' if e9>e21 else 'down' if e9<e21 else 'neutral'
+
+        spikes.append({
+            **s,'vr':vr,'avg_vol':int(avg_vol),'rsi':r,'trend':tr,
+        })
+    spikes.sort(key=lambda x:x['vr'],reverse=True)
+    return spikes[:10]
+
+async def send_volume_alerts(bot):
+    """Market hours e prottek 20 minit e run hoy (scheduler theke).
+    Notun spike paile shathe shathe alert pathay, purono/already-alerted din e abar pathay na."""
+    try:
+        stocks=fetch_stocks()
+        if not stocks:return
+        today=datetime.now(BD_TZ).strftime('%Y-%m-%d')
+        spikes=scan_volume_spikes(stocks)
+        new_spikes=[sp for sp in spikes if not already_alerted(sp['symbol'],today)]
+        if not new_spikes:return
+        for sp in new_spikes[:5]:
+            mark_alerted(sp['symbol'],today,sp['vr'])
+        lines=["EARLY VOLUME ALERT!","(Boro move howar age volume spike dhora poreche)",""]
+        for sp in new_spikes[:5]:
+            lines.append(f">> {sp['symbol']} | Vol {sp['vr']}x avg (20d)")
+            lines.append(f"   Daam:{sp['ltp']} ({sp['change']:+.1f}%) RSI:{sp['rsi']} Trend:{sp['trend']}")
+            lines.append(f"   Vol:{sp['volume']:,} vs Avg:{sp['avg_vol']:,}")
+            lines.append("")
+        lines.append("Full analysis er jonno stock er naam pathan.")
+        await bot.send_message(chat_id=CHAT_ID,text=chr(10).join(lines))
+    except Exception as e:
+        log.error(f"VolAlert: {e}")
+
+async def cmd_volalert(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text("Volume spike scan cholche...")
+    stocks=fetch_stocks()
+    if not stocks:await u.message.reply_text("Data nei.");return
+    spikes=scan_volume_spikes(stocks)
+    if not spikes:
+        await u.message.reply_text("Ekhon kono early volume spike nei.");return
+    msg="EARLY VOLUME SPIKES:\n\n"
+    for sp in spikes:
+        msg+=f">> {sp['symbol']} | Vol {sp['vr']}x avg\n"
+        msg+=f"   Daam:{sp['ltp']} ({sp['change']:+.1f}%) RSI:{sp['rsi']} Trend:{sp['trend']}\n"
+        msg+=f"   Vol:{sp['volume']:,} vs 20d Avg:{sp['avg_vol']:,}\n\n"
+    await u.message.reply_text(msg)
+
+# ══════════════════════
 #  CHAT HANDLER
 # ══════════════════════
 async def handle_message(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
@@ -1003,7 +1150,7 @@ async def handle_message(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
 # ══════════════════════
 async def cmd_start(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     msg=(
-        "DSE Signal Bot v4.1\n"
+        "DSE Signal Bot v4.2\n"
         f"Chat ID: {u.effective_chat.id}\n\n"
         "Notun Features:\n"
         "- Downtrend e signal dei na\n"
@@ -1013,12 +1160,18 @@ async def cmd_start(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
         "- Fake breakout detection\n"
         "- Multi-candle pattern (10+ types)\n"
         "- RSI + MACD + BB + MA + EMA\n"
+        "- Prottek scanner er nijer learning weight\n"
+        "- Early volume spike alert (auto, every 20min)\n"
         "- TP1:8% TP2:20% TP3:50%+\n\n"
         "Commands:\n"
         "/signal - Full analysis\n"
         "/breakout - Breakout scanner\n"
+        "/giant - Sleeping Giant scanner\n"
+        "/momentum - Weekly Momentum scanner\n"
+        "/volalert - Early volume spike check\n"
         "/ew - EW analysis\n"
         "/stats - Performance\n"
+        "/learn - Learning stats (per scanner)\n"
         "/top - Top Gainers\n"
         "/sell - Sell signal\n"
         "/penny - Penny stocks\n\n"
@@ -1039,6 +1192,9 @@ async def cmd_breakout(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     candidates=scan_breakouts(stocks)
     if not candidates:
         await u.message.reply_text("Aj kono breakout candidate nei.\nKal check korun.");return
+    for c in candidates[:8]:
+        save_signal(c['symbol'],'BREAKOUT',c['entry'],c['sl'],c['tp1'],c['tp2'],
+                    c['score'],c.get('binds',[]),scanner='breakout')
     msg=f"BREAKOUT SCANNER -- {len(candidates)} ti Stock\n\n"
     for s in candidates:msg+=fmt_brk(s)
     msg+="STOP LOSS shobshomai din."
@@ -1133,6 +1289,7 @@ def scan_sleeping_giants(stocks):
     15ti real winning stock theke sikha pattern
     """
     giants=[]
+    w=load_weights('giant')
     for s in stocks:
         if s['ltp']<MIN_PRICE or s['volume']<10000:continue
         data=get_hist(s['symbol'])
@@ -1194,69 +1351,69 @@ def scan_sleeping_giants(stocks):
         if vol_ratio<1.5:continue
 
         # Score
-        score=0;reasons=[];signals=[]
+        score=0;reasons=[];signals=[];ginds=[]
 
         # 1. Near 52-week low
         if from_low<20:
-            score+=5;signals.append(f"Near 52w Low (+{from_low:.0f}%)")
+            score+=w.get('near_low',5);signals.append(f"Near 52w Low (+{from_low:.0f}%)");ginds.append('near_low')
             reasons.append(f"52w low theke matro +{from_low:.0f}% - accumulation zone")
         elif from_low<40:
-            score+=3;signals.append(f"Low zone (+{from_low:.0f}%)")
+            score+=w.get('low_zone',3);signals.append(f"Low zone (+{from_low:.0f}%)");ginds.append('low_zone')
         elif from_low<70:
-            score+=1;signals.append(f"Below high (+{from_low:.0f}%)")
+            score+=w.get('below_high',1);signals.append(f"Below high (+{from_low:.0f}%)");ginds.append('below_high')
 
         # 2. Volume spike
         if vol_ratio>=5:
-            score+=6;signals.append(f"Vol {vol_ratio}x EXPLOSION")
+            score+=w.get('vol_explosion',6);signals.append(f"Vol {vol_ratio}x EXPLOSION");ginds.append('vol_explosion')
             reasons.append(f"Volume gorore {vol_ratio}x - institutional entry shuru")
         elif vol_ratio>=3:
-            score+=4;signals.append(f"Vol {vol_ratio}x")
+            score+=w.get('vol3',4);signals.append(f"Vol {vol_ratio}x");ginds.append('vol3')
             reasons.append(f"Volume gorore {vol_ratio}x - strong buying")
         elif vol_ratio>=2:
-            score+=3;signals.append(f"Vol {vol_ratio}x")
+            score+=w.get('vol2',3);signals.append(f"Vol {vol_ratio}x");ginds.append('vol2')
         elif vol_ratio>=1.5:
-            score+=1;signals.append(f"Vol {vol_ratio}x")
+            score+=w.get('vol1_5',1);signals.append(f"Vol {vol_ratio}x");ginds.append('vol1_5')
 
         # 3. RSI in sweet zone (30-60)
         if r<30:
-            score+=5;signals.append(f"RSI:{r} Oversold!")
+            score+=w.get('rsi_oversold',5);signals.append(f"RSI:{r} Oversold!");ginds.append('rsi_oversold')
             reasons.append(f"RSI {r} - heavily oversold, bounce ready")
         elif 30<=r<45:
-            score+=4;signals.append(f"RSI:{r} Recovery")
+            score+=w.get('rsi_recovery',4);signals.append(f"RSI:{r} Recovery");ginds.append('rsi_recovery')
             reasons.append(f"RSI {r} - oversold theke recovery shuru")
         elif 45<=r<60:
-            score+=2;signals.append(f"RSI:{r} OK")
+            score+=w.get('rsi_ok',2);signals.append(f"RSI:{r} OK");ginds.append('rsi_ok')
         # RSI 60-70 = 0 points (neutral)
 
         # 4. Fresh EMA crossover (strongest signal)
         if fresh_cross:
-            score+=5;signals.append("Fresh EMA Cross!")
+            score+=w.get('fresh_cross',5);signals.append("Fresh EMA Cross!");ginds.append('fresh_cross')
             reasons.append("EMA9 eikhuni EMA21 cross korche - strongest signal")
         elif e9>e21:
-            score+=2;signals.append("EMA Bull")
+            score+=w.get('ema_bull',2);signals.append("EMA Bull");ginds.append('ema_bull')
 
         # 5. MACD
         if mh>0 and ml>sl_:
-            score+=3;signals.append("MACD Bull Cross")
+            score+=w.get('macd_bull',3);signals.append("MACD Bull Cross");ginds.append('macd_bull')
             reasons.append("MACD bullish crossover confirmed")
         elif mh>0:
-            score+=1;signals.append("MACD Positive")
+            score+=w.get('macd_pos',1);signals.append("MACD Positive");ginds.append('macd_pos')
         elif mh<0 and mh>-0.1:
-            score+=1;signals.append("MACD Near Zero")
+            score+=w.get('macd_near_zero',1);signals.append("MACD Near Zero");ginds.append('macd_near_zero')
         elif mh<0:
-            score-=1  # negative MACD = penalty
+            score+=w.get('macd_neg',-1)  # negative MACD = penalty
 
         # 6. BB lower bounce
         if live_price<bbl:
-            score+=3;signals.append("BB Oversold!")
+            score+=w.get('bb_oversold',3);signals.append("BB Oversold!");ginds.append('bb_oversold')
             reasons.append("BB lower theke niche - extreme oversold")
         elif live_price<bbm:
-            score+=2;signals.append("Below BB Mid")
+            score+=w.get('bb_below_mid',2);signals.append("Below BB Mid");ginds.append('bb_below_mid')
             reasons.append("BB mid er niche - oversold zone")
 
         # 7. Base pattern
         if base_days>0:
-            score+=2;signals.append(f"Base {base_days}d")
+            score+=w.get('base',2);signals.append(f"Base {base_days}d");ginds.append('base')
             reasons.append(f"{base_days} din er tight base - parabolic ready")
 
         # 8. Price change
@@ -1282,7 +1439,7 @@ def scan_sleeping_giants(stocks):
         giant_ind=get_ind(s['symbol'])
 
         giants.append({
-            **s,'score':score,'signals':signals,'reasons':reasons,
+            **s,'score':score,'signals':signals,'reasons':reasons,'ginds':ginds,
             'entry':live_price,'sl':sl_val,'tp1':tp1,'tp2':tp2,'tp3':tp3,'tp4':tp4,
             'ind':giant_ind,
             'w52_high':round(w52_high,2),'w52_low':round(w52_low,2),
@@ -1346,6 +1503,7 @@ def scan_momentum(stocks):
     + Positive weekly close
     """
     results=[]
+    w=load_weights('momentum')
     for s in stocks:
         data=get_hist(s['symbol'])
         if not data or len(data['closes'])<60:continue
@@ -1377,47 +1535,47 @@ def scan_momentum(stocks):
         vol_inc=wv[-1]>avg_wvol*1.1
 
         # Score
-        score=0;signals=[];reasons=[]
+        score=0;signals=[];reasons=[];minds=[]
 
         # 1. MA10 > MA20 (most important)
         if fresh_cross:
-            score+=6;signals.append("MA10 Fresh Cross MA20!")
+            score+=w.get('ma_fresh_cross',6);signals.append("MA10 Fresh Cross MA20!");minds.append('ma_fresh_cross')
             reasons.append("Weekly MA10 eikhuni MA20 cross korlo - medium-term uptrend shuru")
         elif ma_bull:
-            score+=3;signals.append("MA10>MA20 Bull")
+            score+=w.get('ma_bull',3);signals.append("MA10>MA20 Bull");minds.append('ma_bull')
             reasons.append("Weekly MA10>MA20 - uptrend confirmed")
         else:
             continue  # MA condition must be met
 
         # 2. RSI
         if 50<=wrsi<65:
-            score+=4;signals.append(f"W-RSI:{wrsi} Sweet Zone")
+            score+=w.get('rsi_sweet',4);signals.append(f"W-RSI:{wrsi} Sweet Zone");minds.append('rsi_sweet')
             reasons.append(f"Weekly RSI {wrsi} - perfect momentum zone, overbought na")
         elif 65<=wrsi<75:
-            score+=2;signals.append(f"W-RSI:{wrsi} Strong")
+            score+=w.get('rsi_strong',2);signals.append(f"W-RSI:{wrsi} Strong");minds.append('rsi_strong')
         elif wrsi>=75:
-            score+=0;signals.append(f"W-RSI:{wrsi} High")
+            score+=w.get('rsi_high',0);signals.append(f"W-RSI:{wrsi} High")
             reasons.append(f"Weekly RSI {wrsi} - strong but monitor")
         else:
             continue  # RSI must be 50+
 
         # 3. MACD
         if macd_ok and wml>wsl:
-            score+=4;signals.append("W-MACD Bull Cross")
+            score+=w.get('macd_cross',4);signals.append("W-MACD Bull Cross");minds.append('macd_cross')
             reasons.append("Weekly MACD bullish - momentum confirm")
         elif macd_ok:
-            score+=2;signals.append("W-MACD Positive")
+            score+=w.get('macd_pos',2);signals.append("W-MACD Positive");minds.append('macd_pos')
         else:
-            score-=2  # MACD negative = penalty
+            score+=w.get('macd_neg',-2)  # negative MACD = penalty
 
         # 4. Weekly close
         if weekly_green:
-            score+=2;signals.append("Weekly Green Close")
+            score+=w.get('weekly_green',2);signals.append("Weekly Green Close");minds.append('weekly_green')
             reasons.append("Weekly candle positive close")
 
         # 5. Volume increasing
         if vol_inc:
-            score+=2;signals.append("Weekly Vol Inc")
+            score+=w.get('vol_inc',2);signals.append("Weekly Vol Inc");minds.append('vol_inc')
             reasons.append("Weekly volume barche - buying pressure")
 
         # 6. Live price change
@@ -1427,10 +1585,10 @@ def scan_momentum(stocks):
         daily_ind=get_ind(s['symbol'])
         if daily_ind['ok']:
             if daily_ind['rsi']>50 and daily_ind['macd_h']>0:
-                score+=2;signals.append("Daily Confirm")
+                score+=w.get('daily_confirm',2);signals.append("Daily Confirm");minds.append('daily_confirm')
                 reasons.append("Daily RSI+MACD o positive - double confirmation")
             if daily_ind['trend'] in('strong_up','up'):
-                score+=1;signals.append("Daily Trend Up")
+                score+=w.get('daily_trend',1);signals.append("Daily Trend Up");minds.append('daily_trend')
 
         if score<8:continue
 
@@ -1457,7 +1615,7 @@ def scan_momentum(stocks):
         tp3=round(max(ltp*1.50,ltp+risk*5),2)
 
         results.append({
-            **s,'score':score,'signals':signals,'reasons':reasons,
+            **s,'score':score,'signals':signals,'reasons':reasons,'minds':minds,
             'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3,
             'wma10':round(wma10,2),'wma20':round(wma20,2),
             'wrsi':wrsi,'wmacd_hist':whist,
@@ -1554,6 +1712,9 @@ async def cmd_momentum(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    for mm in results[:8]:
+        save_signal(mm['symbol'],'MOMENTUM',mm['entry'],mm['sl'],mm['tp1'],mm['tp2'],
+                    mm['score'],mm.get('minds',[]),scanner='momentum')
     msg=f"WEEKLY MOMENTUM SCANNER -- {len(results)} ti Stock\n"
     msg+="="*26+"\n"
     msg+="Weekly MA10>MA20 Cross + RSI50+ + MACD+\n\n"
@@ -1594,6 +1755,9 @@ async def cmd_giant(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    for gnt in giants[:8]:
+        save_signal(gnt['symbol'],'GIANT',gnt['entry'],gnt['sl'],gnt['tp1'],gnt['tp2'],
+                    gnt['score'],gnt.get('ginds',[]),scanner='giant')
     msg=f"SLEEPING GIANT SCANNER -- {len(giants)} ti Stock\n"
     msg+="="*26+"\n"
     msg+="15ti real winning stock er pattern:\n"
@@ -1621,39 +1785,77 @@ async def cmd_giant(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
 #  RULE-BASED ADAPTIVE LEARNING
 # ══════════════════════════════════════
 WEIGHTS_FILE='/tmp/dse_weights.json'
+# Prottek scanner er nijer alada weight set - ekta scanner er
+# performance onno scanner er weight ke affect kore na
 DEFAULT_WEIGHTS={
-    'rsi_os':4,'rsi_good':3,'rsi_ok':1,'rsi_overbought':-3,
-    'macd_bull':3,'macd_bear':-3,
-    'bb_low':3,'bb_upper':-2,
-    't_sup':5,'t_up':2,'t_sdown':-5,'t_down':-2,
-    'ew_b':5,'ew_i':3,'fib_s':2,'fake_b':-5,
+    'analyze':{
+        'rsi_os':4,'rsi_good':3,'rsi_ok':1,'rsi_overbought':-3,
+        'macd_bull':3,'macd_bear':-3,
+        'bb_low':3,'bb_upper':-2,
+        't_sup':5,'t_up':2,'t_sdown':-5,'t_down':-2,
+        'ew_b':5,'ew_i':3,'fib_s':2,'fake_b':-5,
+    },
+    'breakout':{
+        'vol5':8,'vol3':6,'vol2':4,'vol1_5':2,
+        'base':5,'swing_break':4,'trend_strong':5,'trend_up':3,
+        'rsi_ok':4,'rsi_low':2,'rsi_overbought':-4,
+        'macd_bull':3,'macd_up':1,'macd_bear':-2,
+        'ew_impulse':4,'ew_bounce':5,'ew_down':-5,'ew_corr':-2,
+        'fib':2,'bb_lower':2,'bb_upper_vol':1,'fake_break':-5,
+    },
+    'giant':{
+        'near_low':5,'low_zone':3,'below_high':1,
+        'vol_explosion':6,'vol3':4,'vol2':3,'vol1_5':1,
+        'rsi_oversold':5,'rsi_recovery':4,'rsi_ok':2,
+        'fresh_cross':5,'ema_bull':2,
+        'macd_bull':3,'macd_pos':1,'macd_near_zero':1,'macd_neg':-1,
+        'bb_oversold':3,'bb_below_mid':2,'base':2,
+    },
+    'momentum':{
+        'ma_fresh_cross':6,'ma_bull':3,
+        'rsi_sweet':4,'rsi_strong':2,'rsi_high':0,
+        'macd_cross':4,'macd_pos':2,'macd_neg':-2,
+        'weekly_green':2,'vol_inc':2,'daily_confirm':2,'daily_trend':1,
+    },
 }
 
-def load_weights():
+def load_weights(scanner='analyze'):
+    """scanner: 'analyze' | 'breakout' | 'giant' | 'momentum'"""
     try:
         if os.path.exists(WEIGHTS_FILE):
             with open(WEIGHTS_FILE,'r') as f:
                 saved=json.load(f)
-            w=DEFAULT_WEIGHTS.copy()
-            w.update(saved)
+            w=DEFAULT_WEIGHTS.get(scanner,{}).copy()
+            w.update(saved.get(scanner,{}))
             return w
     except:pass
-    return DEFAULT_WEIGHTS.copy()
+    return DEFAULT_WEIGHTS.get(scanner,{}).copy()
 
-def save_weights(weights):
+def save_weights(weights,scanner='analyze'):
     try:
+        all_w={}
+        if os.path.exists(WEIGHTS_FILE):
+            try:
+                with open(WEIGHTS_FILE,'r') as f:
+                    all_w=json.load(f)
+            except:all_w={}
+        all_w[scanner]=weights
         with open(WEIGHTS_FILE,'w') as f:
-            json.dump(weights,f,indent=2)
+            json.dump(all_w,f,indent=2)
     except:pass
 
-def analyze_and_adjust():
+SCANNERS=['analyze','breakout','giant','momentum']
+
+def analyze_and_adjust(scanner='analyze'):
+    """Prottek scanner er nijer signal shudhu nijer weight update kore -
+    ekta scanner kharap korle onno scanner er weight nosto hoy na"""
     try:
         conn=sqlite3.connect(DB_PATH)
         c=conn.cursor()
         thirty_ago=(datetime.now(BD_TZ)-timedelta(days=30)).strftime('%Y-%m-%d')
         rows=c.execute(
-            'SELECT indicators,outcome FROM signals WHERE outcome!="pending" AND date>=? LIMIT 200',
-            (thirty_ago,)).fetchall()
+            'SELECT indicators,outcome FROM signals WHERE outcome!="pending" AND scanner=? AND date>=? LIMIT 200',
+            (scanner,thirty_ago)).fetchall()
         conn.close()
         if len(rows)<10:
             return None
@@ -1669,7 +1871,7 @@ def analyze_and_adjust():
                     else:
                         ind_stats[ind]['l']+=1
             except:continue
-        weights=load_weights()
+        weights=load_weights(scanner)
         adjustments=[]
         for ind,s in ind_stats.items():
             total=s['w']+s['l']
@@ -1682,82 +1884,82 @@ def analyze_and_adjust():
             elif wr<=0.35 and cur>-6:
                 weights[ind]=max(cur-1,-6)
                 adjustments.append(f"{ind}:{cur}to{weights[ind]} WR:{int(wr*100)}%")
-        save_weights(weights)
+        save_weights(weights,scanner)
         return{'analyzed':len(rows),'adjustments':adjustments}
     except Exception as e:
-        log.error(f"Learning: {e}")
+        log.error(f"Learning[{scanner}]: {e}")
         return None
 
-def learning_stats():
+def learning_stats(scanner='analyze'):
     try:
         conn=sqlite3.connect(DB_PATH)
         c=conn.cursor()
-        total=c.execute('SELECT COUNT(*) FROM signals').fetchone()[0]
+        total=c.execute('SELECT COUNT(*) FROM signals WHERE scanner=?',(scanner,)).fetchone()[0]
         if total<5:
             conn.close()
-            return "Data kom ache. Minimum 10 signal dorkar."
-        wins=c.execute('SELECT COUNT(*) FROM signals WHERE outcome="win"').fetchone()[0]
-        losses=c.execute('SELECT COUNT(*) FROM signals WHERE outcome="loss"').fetchone()[0]
-        pending=c.execute('SELECT COUNT(*) FROM signals WHERE outcome="pending"').fetchone()[0]
-        hs_w=c.execute('SELECT COUNT(*) FROM signals WHERE score>=15 AND outcome="win"').fetchone()[0]
-        hs_t=c.execute('SELECT COUNT(*) FROM signals WHERE score>=15 AND outcome!="pending"').fetchone()[0]
-        ls_w=c.execute('SELECT COUNT(*) FROM signals WHERE score<15 AND outcome="win"').fetchone()[0]
-        ls_t=c.execute('SELECT COUNT(*) FROM signals WHERE score<15 AND outcome!="pending"').fetchone()[0]
+            return f"[{scanner}] Data kom ache. Minimum 10 signal dorkar."
+        wins=c.execute('SELECT COUNT(*) FROM signals WHERE scanner=? AND outcome="win"',(scanner,)).fetchone()[0]
+        losses=c.execute('SELECT COUNT(*) FROM signals WHERE scanner=? AND outcome="loss"',(scanner,)).fetchone()[0]
+        pending=c.execute('SELECT COUNT(*) FROM signals WHERE scanner=? AND outcome="pending"',(scanner,)).fetchone()[0]
         conn.close()
         wr=round(wins/max(wins+losses,1)*100,1)
         parts=[]
-        parts.append("Learning Analysis:")
-        parts.append(f"Total:{total} Win:{wins} Loss:{losses} Pending:{pending}")
-        parts.append(f"Win Rate: {wr}%")
-        if hs_t>0:
-            parts.append(f"High Score(15+): {round(hs_w/max(hs_t,1)*100,1)}% WR ({hs_t} signals)")
-        if ls_t>0:
-            parts.append(f"Low Score(<15): {round(ls_w/max(ls_t,1)*100,1)}% WR ({ls_t} signals)")
-        w=load_weights()
-        changed=[k+":"+str(v) for k,v in w.items() if v!=DEFAULT_WEIGHTS.get(k,0)]
+        parts.append(f"[{scanner.upper()}] Total:{total} Win:{wins} Loss:{losses} Pending:{pending} WR:{wr}%")
+        w=load_weights(scanner)
+        d=DEFAULT_WEIGHTS.get(scanner,{})
+        changed=[k+":"+str(v) for k,v in w.items() if v!=d.get(k,0)]
         if changed:
-            parts.append("Adjusted weights ("+str(len(changed))+"): "+" ".join(changed[:6]))
-        else:
-            parts.append("Weights: all default (need more signal data)")
+            parts.append("  Adjusted("+str(len(changed))+"): "+" ".join(changed[:6]))
         return chr(10).join(parts)
     except Exception as e:
-        return "Error: "+str(e)
+        return f"[{scanner}] Error: "+str(e)
 
 async def run_learning(bot):
-    log.info("Learning job running...")
-    result=analyze_and_adjust()
-    if result and result['adjustments']:
-        parts=["Learning Update:"]
-        parts.append("Analyzed: "+str(result['analyzed'])+" signals")
-        parts.append("Adjustments:")
-        for a in result['adjustments']:
-            parts.append("  "+a)
-        await bot.send_message(chat_id=CHAT_ID,text=chr(10).join(parts))
+    log.info("Learning job running (all scanners)...")
+    all_parts=["Learning Update (shob scanner):"]
+    any_adj=False
+    for scn in SCANNERS:
+        result=analyze_and_adjust(scn)
+        if result and result['adjustments']:
+            any_adj=True
+            all_parts.append(f"\n[{scn.upper()}] {result['analyzed']} signal analyzed:")
+            for a in result['adjustments']:
+                all_parts.append("  "+a)
+    if any_adj:
+        await bot.send_message(chat_id=CHAT_ID,text=chr(10).join(all_parts))
 
 async def cmd_learn(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text(learning_stats())
-    result=analyze_and_adjust()
-    if result:
-        if result['adjustments']:
-            parts=["Weight adjustments: "+str(len(result['adjustments']))]
+    lines=["Learning Analysis (prottek scanner alada):",""]
+    for scn in SCANNERS:
+        lines.append(learning_stats(scn))
+    await u.message.reply_text(chr(10).join(lines))
+    any_adj=False
+    adj_lines=["Weight Adjustments:"]
+    for scn in SCANNERS:
+        result=analyze_and_adjust(scn)
+        if result and result['adjustments']:
+            any_adj=True
+            adj_lines.append(f"[{scn.upper()}]")
             for a in result['adjustments'][:5]:
-                parts.append("  "+a)
-            await u.message.reply_text(chr(10).join(parts))
-        else:
-            await u.message.reply_text("Weights balanced - no change needed.")
+                adj_lines.append("  "+a)
+    if any_adj:
+        await u.message.reply_text(chr(10).join(adj_lines))
     else:
-        await u.message.reply_text("Min 10 completed signals needed for learning.")
+        await u.message.reply_text("Kono scanner e enough completed signal nei, ba weight already balanced.")
 
 
 async def post_init(app):
     init_db()
     sched=AsyncIOScheduler(timezone='UTC')
-    sched.add_job(send_signals,'cron',hour=12,minute=0,args=[app.bot])
-    sched.add_job(auto_update_data,'cron',hour=9,minute=30,args=[app.bot])
+    sched.add_job(send_signals,'cron',day_of_week='sun,mon,tue,wed,thu',hour=12,minute=0,args=[app.bot])
+    sched.add_job(auto_update_data,'cron',day_of_week='sun,mon,tue,wed,thu',hour=9,minute=30,args=[app.bot])
     sched.add_job(check_outcomes,'cron',hour=4,minute=0,args=[app.bot])
     sched.add_job(run_learning,'cron',hour=3,minute=0,args=[app.bot])
+    # Volume spike alert EKHON auto-send hoy na - shudhu ekta daily
+    # signal chan bole eta off kora holo. /volalert command diye
+    # manually check kora jabe jekhono somoy.
     sched.start()
-    log.info("Scheduler ready: Signal UTC12 | Update UTC09:30 | Check UTC04")
+    log.info("Scheduler ready: Signal UTC12 (6pm BD, dinete 1bar) | Update UTC09:30 | Check UTC04")
 
 def main():
     init_db()
@@ -1771,6 +1973,7 @@ def main():
     app.add_handler(CommandHandler("top",     cmd_top))
     app.add_handler(CommandHandler("sell",    cmd_sell))
     app.add_handler(CommandHandler("penny",   cmd_penny))
+    app.add_handler(CommandHandler("volalert",cmd_volalert))
     app.add_handler(CommandHandler("momentum",cmd_momentum))
     app.add_handler(CommandHandler("giant",   cmd_giant))
     app.add_handler(CommandHandler("learn",   cmd_learn))
