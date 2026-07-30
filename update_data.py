@@ -3,6 +3,8 @@ DSE Daily Data Updater
 Protidin DSE close er por today's data add kore
 """
 import requests,csv,os,time
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from bs4 import BeautifulSoup
 from datetime import datetime
 
@@ -15,7 +17,7 @@ def is_dse_trading_day(date_str):
     directly check kori - shei din shotti trade hoyeche kina."""
     try:
         url=f"https://www.dsebd.org/day_end_archive.php?endDate={date_str}&archive=data"
-        r=requests.get(url,headers=HEADERS,timeout=15)
+        r=requests.get(url,headers=HEADERS,timeout=15,verify=False)
         if r.status_code!=200:return None
         soup=BeautifulSoup(r.text,'html.parser')
         for t in soup.find_all('table'):
@@ -30,7 +32,7 @@ def fetch_today():
     stocks={}
     today=datetime.now().strftime('%Y-%m-%d')
     try:
-        r=requests.get(url,headers=HEADERS,timeout=30)
+        r=requests.get(url,headers=HEADERS,timeout=30,verify=False)
         r.raise_for_status()
         soup=BeautifulSoup(r.text,'html.parser')
         for row in soup.find_all('tr'):

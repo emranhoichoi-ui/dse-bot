@@ -4,6 +4,8 @@ Uses dsebd.org/day_end_archive.php to fill missing dates
 Runs in GitHub Actions (different IP than Railway)
 """
 import os,csv,requests,time
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from bs4 import BeautifulSoup
 from datetime import datetime,timedelta
 
@@ -31,7 +33,7 @@ def fetch_all_stocks_for_date(date):
     """Ek diner sob stock er data ane"""
     url=f"https://www.dsebd.org/day_end_archive.php?endDate={date}&archive=data"
     try:
-        r=requests.get(url,headers=HEADERS,timeout=20)
+        r=requests.get(url,headers=HEADERS,timeout=20,verify=False)
         if r.status_code!=200:
             print(f"  {date}: HTTP {r.status_code}")
             return{}
