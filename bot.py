@@ -238,6 +238,77 @@ def detect_ew(closes,highs,lows):
         return phase,desc
 
 # ══════════════════════
+#  MARKET STRUCTURE: BOS / CHoCH
+# ══════════════════════
+def detect_structure(highs,lows,closes,left=5,right=5):
+    """
+    Break of Structure (BOS) / Change of Character (CHoCH) detection.
+    Builds a zigzag of alternating swing highs/lows, labels each swing
+    HH/LH (highs) or HL/LL (lows) relative to the previous swing of the
+    same type, then checks whether the latest close extends the existing
+    structure (BOS) or breaks the opposing swing point (CHoCH = early
+    reversal warning).
+    """
+    n=len(closes)
+    if n<left+right+10:return 'unknown','Not enough data for structure analysis'
+
+    raw=[]  # (index, 'H'/'L', price)
+    for i in range(left,n-right):
+        if highs[i]==max(highs[i-left:i+right+1]):raw.append((i,'H',highs[i]))
+        if lows[i]==min(lows[i-left:i+right+1]):raw.append((i,'L',lows[i]))
+    raw.sort(key=lambda x:x[0])
+    if len(raw)<4:return 'unknown','Not enough swing points'
+
+    # collapse to a clean alternating zigzag - keep the more extreme
+    # point when two of the same type occur back-to-back
+    zz=[raw[0]]
+    for pt in raw[1:]:
+        if pt[1]==zz[-1][1]:
+            if pt[1]=='H' and pt[2]>zz[-1][2]:zz[-1]=pt
+            elif pt[1]=='L' and pt[2]<zz[-1][2]:zz[-1]=pt
+        else:
+            zz.append(pt)
+    if len(zz)<4:return 'unknown','Not enough alternating swing points'
+
+    last_h=None;last_l=None;labeled=[]
+    for idx,typ,price in zz:
+        if typ=='H':
+            lbl='HH' if (last_h is not None and price>last_h) else ('LH' if last_h is not None else 'H')
+            last_h=price
+        else:
+            lbl='HL' if (last_l is not None and price>last_l) else ('LL' if last_l is not None else 'L')
+            last_l=price
+        labeled.append((idx,typ,price,lbl))
+
+    h_labels=[l for l in labeled if l[1]=='H']
+    l_labels=[l for l in labeled if l[1]=='L']
+    if not h_labels or not l_labels:return 'unknown','Insufficient structure'
+
+    last_h_lbl=h_labels[-1][3];last_l_lbl=l_labels[-1][3]
+    last_swing_high=h_labels[-1][2];last_swing_low=l_labels[-1][2]
+
+    if last_h_lbl=='HH' and last_l_lbl=='HL':bias='up'
+    elif last_h_lbl=='LH' and last_l_lbl=='LL':bias='down'
+    else:bias='neutral'
+
+    last_close=closes[-1]
+
+    if bias=='up':
+        if last_close>last_swing_high:
+            return 'BOS_up',f'Uptrend structure intact - close {round(last_close,2)} upore last swing high {round(last_swing_high,2)}'
+        if last_close<last_swing_low:
+            return 'CHOCH_down',f'Structure break! Close {round(last_close,2)} last swing low {round(last_swing_low,2)}-er niche - uptrend palte jete pare'
+        return 'up_intact','Uptrend structure (HH/HL) ekhono intact'
+    elif bias=='down':
+        if last_close<last_swing_low:
+            return 'BOS_down',f'Downtrend structure intact - close {round(last_close,2)} last swing low {round(last_swing_low,2)}-er niche'
+        if last_close>last_swing_high:
+            return 'CHOCH_up',f'Structure break! Close {round(last_close,2)} last swing high {round(last_swing_high,2)}-er upore - possible bullish reversal'
+        return 'down_intact','Downtrend structure (LH/LL) ekhono intact'
+    else:
+        return 'neutral','Clear HH/HL ba LH/LL sequence pawa jayni - choppy structure'
+
+# ══════════════════════
 #  FULL INDICATORS
 # ══════════════════════
 def get_ind(symbol):
@@ -249,6 +320,7 @@ def get_ind(symbol):
                'ew_phase':'unknown','ew_desc':'N/A',
                'fake_break':False,'candle':'N/A','candle_score':0,
                'base_days':0,'fib_level':'none',
+               'structure':'unknown','structure_desc':'N/A',
                'trend_ok':True}  # trend_ok = allow signal
 
     closes=data['closes'];highs=data['highs']
@@ -449,6 +521,9 @@ def get_ind(symbol):
         if dist<20:
             ma200_warning=f"MA200 resistance {round(ma200,1)} ({dist}% upore) - ekhane partial sell korun"
 
+    # ══ BOS / CHoCH MARKET STRUCTURE ══
+    structure,structure_desc=detect_structure(highs,lows,closes)
+
     return{
         'ok':True,'rsi':r,'macd':ml,'macd_sig':sl_,'macd_h':mh,
         'bb_upper':bbu,'bb_mid':bbm,'bb_lower':bbl,'bb_pos':bp,
@@ -466,6 +541,7 @@ def get_ind(symbol):
         'fake_break':fake_break,'range_bound':range_bound,
         'candle':candle,'candle_score':cs,
         'base_days':base_days,'fib_level':fib_level,
+        'structure':structure,'structure_desc':structure_desc,
     }
 
 # ══════════════════════
@@ -518,6 +594,15 @@ def scan_breakouts(stocks):
             reasons.append(f"RSI {r} - breakout zone, aro upore jawar space ache")
         elif 45<=r<50:score+=w.get('rsi_low',2);sigs.append(f"RSI:{r}");binds.append('rsi_low')
         elif r>75:score+=w.get('rsi_overbought',-4);sigs.append(f"RSI:{r} Overbought!")  # penalize more
+
+        # 6. Market Structure (BOS/CHoCH)
+        struct=ind.get('structure','unknown')
+        if struct=='BOS_up':
+            score+=w.get('bos_up',4);sigs.append("BOS Up");binds.append('bos_up')
+            reasons.append("Structure confirm - swing high break kore uptrend continue korche (BOS)")
+        elif struct=='CHOCH_down':
+            score+=w.get('choch_down',-6);sigs.append("CHoCH Down!!")
+            reasons.append("Shabdhan: structure break hoyeche, reversal shomvabona - " + ind.get('structure_desc',''))
 
         # 6. MACD
         if ind['macd_h']>0 and ind['macd']>ind['macd_sig']:
@@ -705,6 +790,19 @@ def analyze(stocks,use_hist=False):
             elif 'Downtrend' in ep:score-=4;tags.append("EW Down")
             elif 'Correction' in ep:score-=2;tags.append("EW Corr")
 
+            # Market Structure (BOS/CHoCH)
+            struct=ind.get('structure','unknown')
+            if struct=='BOS_up':
+                score+=w.get('bos_up',3);tags.append("BOS Up");inds.append('bos_up')
+            elif struct=='CHOCH_up':
+                score+=w.get('choch_up',5);tags.append("CHoCH Bullish!");inds.append('choch_up')
+                reasons.append("Downtrend theke structure change - possible early reversal (CHoCH)")
+            elif struct=='CHOCH_down':
+                score+=w.get('choch_down',-5);tags.append("CHoCH Bearish!")
+                warnings.append("Structure break - uptrend shesh hote pare (CHoCH)")
+            elif struct=='BOS_down':
+                score+=w.get('bos_down',-3);tags.append("BOS Down")
+
             # Volume ratio
             vr=ind['vol_ratio']
             if vr>=3:score+=3;tags.append(f"Vol {vr}x")
@@ -812,6 +910,9 @@ def fmt_brk(s):
         lines.append(f"Fibonacci {s['ind']['fib_level']} te support")
     if s['ind'].get('base_days',0)>0:
         lines.append(f"Base: {s['ind']['base_days']} din consolidation")
+    struct=s.get('ind',{}).get('structure','unknown')
+    if struct not in('unknown','neutral'):
+        lines.append(f"Structure: {struct.replace('_',' ')} - {s['ind'].get('structure_desc','')}")
     lines+=[
         f"",
         f"Entry : {s['entry']}",
@@ -843,6 +944,9 @@ def fmt_sig(s):
     if cp and cp not in('none','N/A'):lines.append(f"   Candle: {cp}")
     if ep and ep not in('unknown','neutral','N/A'):lines.append(f"   EW: {ep}")
     if fib!='none':lines.append(f"   Fibonacci {fib} te support")
+    struct=ind.get('structure','unknown') if ind.get('ok') else 'unknown'
+    if struct not in('unknown','neutral'):
+        lines.append(f"   Structure: {struct.replace('_',' ')}")
     lines+=[
         f"   Entry:{s['entry']} | SL:{s['sl']}",
         f"   TP1:{s['tp1']} (+{tp1p}%) | TP2:{s['tp2']} (+{tp2p}%)",
