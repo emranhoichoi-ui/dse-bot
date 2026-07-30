@@ -128,9 +128,25 @@ def rsi(closes,p=14):
     if al==0:return 100.0
     return round(100-(100/(1+ag/al)),1)
 
+def _ema_series(closes,p):
+    """Full EMA series aligned to closes (None where not yet computable)."""
+    if len(closes)<p:return [None]*len(closes)
+    k=2/(p+1);seed=sum(closes[:p])/p
+    series=[None]*(p-1)+[seed]
+    v=seed
+    for x in closes[p:]:
+        v=x*k+v*(1-k);series.append(v)
+    return series
+
 def macd(closes):
-    if len(closes)<26:return 0,0,0
-    ml=ema(closes,12)-ema(closes,26);sl=ml*0.9
+    # Need enough history for EMA26 + a 9-period EMA of that series to be meaningful
+    if len(closes)<26+9:return 0,0,0
+    ema12=_ema_series(closes,12);ema26=_ema_series(closes,26)
+    macd_line=[(a-b) if a is not None and b is not None else None for a,b in zip(ema12,ema26)]
+    valid=[v for v in macd_line if v is not None]
+    signal_series=_ema_series(valid,9)
+    ml=valid[-1]
+    sl=signal_series[-1] if signal_series[-1] is not None else 0
     return round(ml,3),round(sl,3),round(ml-sl,3)
 
 def bb(closes,p=20):
@@ -581,6 +597,8 @@ def fetch_stocks():
             if not sym:continue
             nums=[sf(c) for c in cells[si+1:]]
             if len(nums)<6:continue
+            if len(stocks)<3:
+                log.info(f"COLUMN-DEBUG {sym}: raw_cells={cells[si+1:si+10]} parsed_nums={nums[:9]}")
             ltp=nums[0];hi=nums[2] if len(nums)>2 else 0
             lo=nums[3] if len(nums)>3 else 0
             yd=nums[4] if len(nums)>4 else 0
