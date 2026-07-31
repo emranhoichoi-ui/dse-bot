@@ -30,7 +30,8 @@ def get_trading_dates(from_date, to_date):
     return dates
 
 def fetch_all_stocks_for_date(date):
-    """Ek diner sob stock er data ane"""
+    """Ek diner sob stock er data ane - header theke column position ber kore,
+    dsebd.org er table layout change hole o kaj kore"""
     url=f"https://www.dsebd.org/day_end_archive.php?endDate={date}&archive=data"
     try:
         r=requests.get(url,headers=HEADERS,timeout=20,verify=False)
@@ -46,17 +47,42 @@ def fetch_all_stocks_for_date(date):
         stocks={}
         for table in tables:
             rows=table.find_all("tr")
+            if len(rows)<2:continue
+
+            # --- try to map columns from the header row ---
+            header_cells=rows[0].find_all(["th","td"])
+            header_txt=[h.get_text(strip=True).upper() for h in header_cells]
+            col={}
+            for i,name in enumerate(header_txt):
+                if ('TRADING' in name and 'CODE' in name) or name in('SYMBOL','SCRIP'):col['sym']=i
+                elif name in('HIGH','HIGH*'):col['high']=i
+                elif name in('LOW','LOW*'):col['low']=i
+                elif name.startswith('CLOSING') or name in('CLOSEP','CLOSEP*','CLOSE','LTP','LTP*'):col['close']=i
+                elif name in('YCP','YCP*','OPENING PRICE*','OPEN'):col['ycp']=i
+                elif name in('VOLUME','VOLUME*'):col['vol']=i
+
+            use_header=all(k in col for k in('sym','high','low','close'))
+
             for row in rows[1:]:
                 cols=row.find_all("td")
                 if len(cols)<7:continue
                 try:
-                    sym=cols[1].get_text(strip=True).upper()
+                    if use_header and max(col.values())<len(cols):
+                        sym=cols[col['sym']].get_text(strip=True).upper()
+                        hi=float(cols[col['high']].get_text(strip=True).replace(",","") or 0)
+                        lo=float(cols[col['low']].get_text(strip=True).replace(",","") or 0)
+                        cl=float(cols[col['close']].get_text(strip=True).replace(",","") or 0)
+                        yday=float(cols[col['ycp']].get_text(strip=True).replace(",","") or 0) if 'ycp' in col else 0
+                        vol=float(cols[col['vol']].get_text(strip=True).replace(",","") or 0) if 'vol' in col else 0
+                    else:
+                        # fallback: old hardcoded positions (kept for safety)
+                        sym=cols[1].get_text(strip=True).upper()
+                        hi  =float(cols[2].get_text(strip=True).replace(",","") or 0)
+                        lo  =float(cols[3].get_text(strip=True).replace(",","") or 0)
+                        cl  =float(cols[4].get_text(strip=True).replace(",","") or 0)
+                        yday=float(cols[5].get_text(strip=True).replace(",","") or 0)
+                        vol =float(cols[6].get_text(strip=True).replace(",","") or 0)
                     if not sym or len(sym)<2:continue
-                    hi  =float(cols[2].get_text(strip=True).replace(",","") or 0)
-                    lo  =float(cols[3].get_text(strip=True).replace(",","") or 0)
-                    cl  =float(cols[4].get_text(strip=True).replace(",","") or 0)
-                    yday=float(cols[5].get_text(strip=True).replace(",","") or 0)
-                    vol =float(cols[6].get_text(strip=True).replace(",","") or 0)
                     if cl>0:
                         op=yday if yday>0 else cl
                         stocks[sym]={
@@ -66,6 +92,7 @@ def fetch_all_stocks_for_date(date):
                             "Close":round(cl,2),"Volume":int(vol)
                         }
                 except:continue
+        print(f"  {date}: parsed {len(stocks)} stocks (header_map={col if 'col' in dir() else 'n/a'})")
         return stocks
     except Exception as e:
         print(f"  {date}: Error - {e}")
