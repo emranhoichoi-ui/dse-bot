@@ -433,7 +433,7 @@ def get_ind(symbol):
                'fake_break':False,'candle':'N/A','candle_score':0,
                'base_days':0,'fib_level':'none',
                'structure':'unknown','structure_desc':'N/A',
-               'recent_swing_low':None,
+               'recent_swing_low':None,'pre_breakout_high':0,
                'trend_ok':True}  # trend_ok = allow signal
 
     closes=data['closes'];highs=data['highs']
@@ -641,6 +641,10 @@ def get_ind(symbol):
     #    which goes stale/too-wide right after a sharp breakout) ══
     rsw=recent_swing_low(highs,lows,closes)
 
+    # Pre-breakout resistance level (excludes the last 3 days, so it's the
+    # OLD high that got broken, not today's own high inflating the window)
+    pre_breakout_high=max(highs[-lb:-3]) if lb>3 and len(highs)>3 else 0
+
     return{
         'ok':True,'rsi':r,'macd':ml,'macd_sig':sl_,'macd_h':mh,
         'bb_upper':bbu,'bb_mid':bbm,'bb_lower':bbl,'bb_pos':bp,
@@ -659,7 +663,7 @@ def get_ind(symbol):
         'candle':candle,'candle_score':cs,
         'base_days':base_days,'fib_level':fib_level,
         'structure':structure,'structure_desc':structure_desc,
-        'recent_swing_low':rsw,
+        'recent_swing_low':rsw,'pre_breakout_high':pre_breakout_high,
     }
 
 # ══════════════════════
@@ -762,12 +766,15 @@ def scan_breakouts(stocks):
 
         if score<10:continue
 
-        # SL: prefer the most recent CONFIRMED pivot low (local reversal
-        # point) over a raw N-day min, which goes stale/too-wide right
-        # after a sharp breakout (old pre-move lows skew it far away).
-        # Cap max risk at 20% as a safety net either way.
+        # SL: prefer the broken resistance level itself (prior resistance =
+        # new support - if price falls back below it, the breakout is
+        # invalidated). Falls back to recent pivot low, then a 20%
+        # max-risk safety cap if neither is available/sane.
+        sh_level=ind.get('pre_breakout_high',0)
         rsw=ind.get('recent_swing_low')
-        if rsw and rsw>0 and rsw<ltp:
+        if sh_level>0 and sh_level<ltp:
+            sl_raw=sh_level*0.97
+        elif rsw and rsw>0 and rsw<ltp:
             sl_raw=rsw*0.99
         elif ind['swing_low']>0:
             sl_raw=ind['swing_low']*0.99
