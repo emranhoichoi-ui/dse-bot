@@ -240,6 +240,18 @@ def detect_ew(closes,highs,lows):
 # ══════════════════════
 #  MARKET STRUCTURE: BOS / CHoCH
 # ══════════════════════
+def recent_swing_low(highs,lows,closes,left=5,right=5):
+    """Most recent CONFIRMED pivot low (local reversal point), not just the
+    raw min of a fixed window - avoids stale pre-breakout lows skewing SL.
+    Returns None if not enough data / no clean pivot found."""
+    n=len(closes)
+    if n<left+right+10:return None
+    raw=[]
+    for i in range(left,n-right):
+        if lows[i]==min(lows[i-left:i+right+1]):raw.append((i,lows[i]))
+    if not raw:return None
+    return raw[-1][1]  # most recent confirmed pivot low
+
 def detect_structure(highs,lows,closes,left=5,right=5):
     """
     Break of Structure (BOS) / Change of Character (CHoCH) detection.
@@ -421,6 +433,7 @@ def get_ind(symbol):
                'fake_break':False,'candle':'N/A','candle_score':0,
                'base_days':0,'fib_level':'none',
                'structure':'unknown','structure_desc':'N/A',
+               'recent_swing_low':None,
                'trend_ok':True}  # trend_ok = allow signal
 
     closes=data['closes'];highs=data['highs']
@@ -624,6 +637,10 @@ def get_ind(symbol):
     # ══ BOS / CHoCH MARKET STRUCTURE ══
     structure,structure_desc=detect_structure(highs,lows,closes)
 
+    # ══ RECENT PIVOT LOW (better SL reference than raw N-day min,
+    #    which goes stale/too-wide right after a sharp breakout) ══
+    rsw=recent_swing_low(highs,lows,closes)
+
     return{
         'ok':True,'rsi':r,'macd':ml,'macd_sig':sl_,'macd_h':mh,
         'bb_upper':bbu,'bb_mid':bbm,'bb_lower':bbl,'bb_pos':bp,
@@ -642,6 +659,7 @@ def get_ind(symbol):
         'candle':candle,'candle_score':cs,
         'base_days':base_days,'fib_level':fib_level,
         'structure':structure,'structure_desc':structure_desc,
+        'recent_swing_low':rsw,
     }
 
 # ══════════════════════
@@ -744,7 +762,19 @@ def scan_breakouts(stocks):
 
         if score<10:continue
 
-        sl=round(ind['swing_low']*0.99 if ind['swing_low']>0 else ltp*0.93,2)
+        # SL: prefer the most recent CONFIRMED pivot low (local reversal
+        # point) over a raw N-day min, which goes stale/too-wide right
+        # after a sharp breakout (old pre-move lows skew it far away).
+        # Cap max risk at 20% as a safety net either way.
+        rsw=ind.get('recent_swing_low')
+        if rsw and rsw>0 and rsw<ltp:
+            sl_raw=rsw*0.99
+        elif ind['swing_low']>0:
+            sl_raw=ind['swing_low']*0.99
+        else:
+            sl_raw=ltp*0.93
+        max_risk_sl=ltp*0.80  # never risk more than 20% on the mechanical SL
+        sl=round(max(sl_raw,max_risk_sl),2)
         risk=ltp-sl;risk=risk if risk>0 else ltp*0.05
         tp1=round(max(ltp*(1+TP1_MIN),ltp+risk*2),2)
         tp2=round(max(ltp*(1+TP2_MIN),ltp+risk*4),2)
