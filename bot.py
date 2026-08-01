@@ -28,7 +28,7 @@ MIN_PRICE=1.0
 PENNY_THRESHOLD=10.0
 MIN_VOLUME=20000
 MAX_CHANGE=15.0
-TP1_MIN=0.08
+TP1_MIN=0.10
 TP2_MIN=0.20
 DB_PATH='/tmp/dse_v4.db'
 SEP='='*26
@@ -434,6 +434,7 @@ def get_ind(symbol):
                'base_days':0,'fib_level':'none',
                'structure':'unknown','structure_desc':'N/A',
                'recent_swing_low':None,'pre_breakout_high':0,
+               'near_resistance':False,
                'trend_ok':True}  # trend_ok = allow signal
 
     closes=data['closes'];highs=data['highs']
@@ -645,6 +646,11 @@ def get_ind(symbol):
     # OLD high that got broken, not today's own high inflating the window)
     pre_breakout_high=max(highs[-lb:-3]) if lb>3 and len(highs)>3 else 0
 
+    # If a real resistance level sits within the TP1_MIN floor (10%), the
+    # stock shouldn't generate ANY signal at all - too little room before
+    # it likely stalls, regardless of scanner.
+    near_resistance = bool(nearest_r1 and 0<nearest_r1<last*(1+TP1_MIN))
+
     return{
         'ok':True,'rsi':r,'macd':ml,'macd_sig':sl_,'macd_h':mh,
         'bb_upper':bbu,'bb_mid':bbm,'bb_lower':bbl,'bb_pos':bp,
@@ -664,6 +670,7 @@ def get_ind(symbol):
         'base_days':base_days,'fib_level':fib_level,
         'structure':structure,'structure_desc':structure_desc,
         'recent_swing_low':rsw,'pre_breakout_high':pre_breakout_high,
+        'near_resistance':near_resistance,
     }
 
 # ══════════════════════
@@ -893,8 +900,11 @@ def analyze(stocks,use_hist=False):
             # downtrend e HOLD force kori
             s.update({'score':-5,'signal':'HOLD (Downtrend)','tags':['Downtrend - avoid'],
                       'entry':ltp,'sl':round(lo*0.99,2),
-                      'tp1':round(ltp*1.08,2),'tp2':round(ltp*1.20,2),'ind':ind,'inds':[],'warnings':['Downtrend - avoid']})
+                      'tp1':round(ltp*1.10,2),'tp2':round(ltp*1.20,2),'ind':ind,'inds':[],'warnings':['Downtrend - avoid']})
             scored.append(s);continue
+
+        # ══ NEAR-RESISTANCE FILTER ══ (resistance closer than 10% away - skip entirely)
+        if use_hist and ind.get('near_resistance'):continue
 
         if ind['ok']:
             # Candle pattern (multi-day)
@@ -1500,7 +1510,7 @@ async def cmd_ew(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text("Aj kono strong EW candidate nei.");return
     msg="Elliott Wave Analysis:\n\n"
     for s,ind in results[:8]:
-        tp1p=round((s['ltp']*1.08-s['ltp'])/s['ltp']*100,1)
+        tp1p=round((s['ltp']*1.10-s['ltp'])/s['ltp']*100,1)
         msg+=f">> {s['symbol']} | {ind['ew_phase']}\n"
         msg+=f"   Daam: {s['ltp']} ({s['change']:+.1f}%) Vol:{s['volume']:,}\n"
         msg+=f"   {ind['ew_desc']}\n"
@@ -1722,6 +1732,9 @@ def scan_sleeping_giants(stocks):
         # Get daily indicators for S/R levels
         giant_ind=get_ind(s['symbol'])
 
+        # ══ NEAR-RESISTANCE FILTER ══ (resistance closer than 10% away - skip entirely)
+        if giant_ind.get('near_resistance'):continue
+
         giants.append({
             **s,'score':score,'signals':signals,'reasons':reasons,'ginds':ginds,
             'entry':live_price,'sl':sl_val,'tp1':tp1,'tp2':tp2,'tp3':tp3,'tp4':tp4,
@@ -1880,7 +1893,7 @@ def scan_momentum(stocks):
         # Check nearest resistance - if too close, skip
         ltp_=s['ltp']
         nearest_r=daily_ind.get('nearest_r1',ltp_*1.15) if daily_ind.get('ok') else ltp_*1.15
-        min_tp1=ltp_*1.08
+        min_tp1=ltp_*1.10
         # If resistance is within 5% - not enough room
         if nearest_r < min_tp1:
             continue  # Skip - resistance too close
@@ -1929,7 +1942,7 @@ def fmt_momentum(s):
 
     # TP just below resistance (2% below) but minimum 8%
     tp1_from_r=round(nearest_r1*0.98,2)
-    tp1_min=round(ltp*1.08,2)
+    tp1_min=round(ltp*1.10,2)
     tp1=round(max(tp1_from_r, tp1_min),2)  # at least 8%
     tp2=round(max(s['tp2'], ltp*1.20),2)   # at least 20%
     tp3=round(max(s['tp3'], ltp*1.35),2)   # at least 35%
