@@ -844,8 +844,10 @@ def scan_breakouts(stocks):
         tp1=round(r1*0.98,2) if min_r1<r1<tp1_mech else round(tp1_mech,2)
         tp2_cap=r2 if r2>tp1 else 0
         tp2=round(tp2_cap*0.98,2) if tp2_cap and min_r2<tp2_cap<tp2_mech else round(tp2_mech,2)
+        tp2=max(tp2,round(tp1*1.03,2))  # monotonic safety: TP2 always >= TP1
         tp3_cap=r3 if r3>tp2 else 0
         tp3=round(tp3_cap*0.98,2) if tp3_cap and min_r3<tp3_cap<tp3_mech else round(tp3_mech,2)
+        tp3=max(tp3,round(tp2*1.03,2))  # monotonic safety: TP3 always >= TP2
 
         candidates.append({
             **s,'score':score,'sigs':sigs,'reasons':reasons,'ind':ind,'binds':binds,
