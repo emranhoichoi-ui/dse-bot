@@ -783,9 +783,23 @@ def scan_breakouts(stocks):
         max_risk_sl=ltp*0.80  # never risk more than 20% on the mechanical SL
         sl=round(max(sl_raw,max_risk_sl),2)
         risk=ltp-sl;risk=risk if risk>0 else ltp*0.05
-        tp1=round(max(ltp*(1+TP1_MIN),ltp+risk*2),2)
-        tp2=round(max(ltp*(1+TP2_MIN),ltp+risk*4),2)
-        tp3=round(max(ltp*1.50,ltp+risk*6),2)
+        tp1_mech=max(ltp*(1+TP1_MIN),ltp+risk*2)
+        tp2_mech=max(ltp*(1+TP2_MIN),ltp+risk*4)
+        tp3_mech=max(ltp*1.50,ltp+risk*6)
+
+        # Cap each TP at a real nearby resistance level (recent swing
+        # high / MA level, within the last 120 days) if one sits between
+        # entry and the mechanical target - otherwise price may stall at
+        # that resistance well before reaching a purely risk-multiple TP.
+        r1=ind.get('nearest_r1',0) or 0
+        r2=ind.get('nearest_r2',0) or 0
+        r3=ind.get('nearest_r3',0) or 0
+        min_r1=ltp*(1+TP1_MIN);min_r2=ltp*(1+TP2_MIN);min_r3=ltp*1.35
+        tp1=round(r1*0.98,2) if min_r1<r1<tp1_mech else round(tp1_mech,2)
+        tp2_cap=r2 if r2>tp1 else 0
+        tp2=round(tp2_cap*0.98,2) if tp2_cap and min_r2<tp2_cap<tp2_mech else round(tp2_mech,2)
+        tp3_cap=r3 if r3>tp2 else 0
+        tp3=round(tp3_cap*0.98,2) if tp3_cap and min_r3<tp3_cap<tp3_mech else round(tp3_mech,2)
 
         candidates.append({
             **s,'score':score,'sigs':sigs,'reasons':reasons,'ind':ind,'binds':binds,
