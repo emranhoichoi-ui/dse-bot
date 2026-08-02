@@ -907,14 +907,20 @@ def fetch_stocks():
 def get_dsex():
     try:
         r=requests.get("https://www.dsebd.org",headers=HEADERS,timeout=12,verify=False)
+        log.info(f"DSEX-DEBUG: HTTP {r.status_code}, response length {len(r.text)}")
         for pat in[r'DSEX[^\d]*(\d{4,6}\.?\d{0,2})',r'>(\d{4,6}\.\d{2})<']:
-            for m in re.findall(pat,r.text):
+            found=re.findall(pat,r.text)
+            log.info(f"DSEX-DEBUG: pattern {pat!r} found {len(found)} matches, sample={found[:5]}")
+            for m in found:
                 try:
                     v=float(m.replace(',',''))
                     if 3000<v<10000:return f"{v:,.2f}"
                 except:continue
+        log.info(f"DSEX-DEBUG: no valid match, first 300 chars of response: {r.text[:300]}")
         return "N/A"
-    except:return "N/A"
+    except Exception as e:
+        log.info(f"DSEX-DEBUG: exception - {type(e).__name__}: {e}")
+        return "N/A"
 
 # ══════════════════════
 #  STANDARD ANALYSIS (Fixed)
