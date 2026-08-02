@@ -926,7 +926,7 @@ def analyze(stocks,use_hist=False):
         chg=s['change'];vol=s['volume'];yd=s['yday']
         rng=hi-lo if hi>lo else ltp*0.01
         cp_pos=(ltp-lo)/rng;uw=(hi-ltp)/rng;lw=(ltp-lo)/rng
-        score=0.0;tags=[];inds=[];warnings=[]
+        score=0.0;tags=[];inds=[];warnings=[];reasons=[]
 
         ind={'ok':False,'rsi':50,'trend':'neutral','ew_phase':'unknown','ew_desc':'N/A',
              'fake_break':False,'candle':'N/A','candle_score':0,'macd_h':0,
@@ -1060,7 +1060,8 @@ def analyze(stocks,use_hist=False):
         if risk<=0:risk=ltp*0.04
         tp1=round(max(ltp*(1+TP1_MIN),ltp+risk*2.5),2)
         tp2=round(max(ltp*(1+TP2_MIN),ltp+risk*4.5),2)
-        s.update({'score':round(score,1),'signal':signal,'tags':tags,'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2})
+        s.update({'score':round(score,1),'signal':signal,'tags':tags,'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,
+                  'reasons':reasons,'inds':inds,'warnings':warnings})
         scored.append(s)
 
     scored.sort(key=lambda x:x['score'],reverse=True)
