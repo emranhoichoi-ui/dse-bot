@@ -862,6 +862,71 @@ def scan_breakouts(stocks):
 # ══════════════════════
 #  DSE LIVE
 # ══════════════════════
+def fetch_stocks_alpha():
+    """
+    fetch_stocks() shudhu 'by value' page scrape kore, jeta shudhu
+    top-turnover regular equity dekhay - Mutual Fund er moto kom-price
+    kintu decent-volume thaka instrument (jemon ABB1STMF, DBH1STMF)
+    kokhono ei list e ashe na, karon per-share value kom bole total
+    turnover value onujayi niche pore jay.
+
+    DSE-r 'latest_share_price_alpha.php?letter=X' page-e shob
+    instrument type (equity + MF) ekshathe, alphabetically, mishe
+    thake - eta diye shei gap fill kora hoy. Prottekta letter (A-Z)
+    ebong '#' (numeric-starting symbol jemon 1JANATAMF) er jonno
+    আলাদা page - total 27ta request.
+    """
+    letters=list('ABCDEFGHIJKLMNOPQRSTUVWXYZ')+['#']
+    stocks={}
+    debug_done=False
+    for letter in letters:
+        try:
+            url=f"https://www.dse.com.bd/latest_share_price_alpha.php?letter={letter}"
+            r=requests.get(url,headers=HEADERS,timeout=20,verify=False)
+            if not debug_done:
+                log.info(f"AlphaFetch-DEBUG({letter}): HTTP {r.status_code}, response length {len(r.text)}")
+            if r.status_code!=200:continue
+            soup=BeautifulSoup(r.text,"html.parser")
+            tables_found=soup.find_all("table")
+            if not debug_done:
+                log.info(f"AlphaFetch-DEBUG({letter}): {len(tables_found)} tables found")
+            for table in tables_found:
+                rows=table.find_all("tr")
+                if len(rows)<2:continue
+                header_cells=rows[0].find_all(["th","td"])
+                header_txt=[h.get_text(strip=True).upper() for h in header_cells]
+                col={}
+                for i,name in enumerate(header_txt):
+                    if ('TRADING' in name and 'CODE' in name) or name in('SYMBOL','SCRIP'):col['sym']=i
+                    elif name.startswith('LTP'):col['ltp']=i
+                    elif name in('HIGH','HIGH*'):col['high']=i
+                    elif name in('LOW','LOW*'):col['low']=i
+                    elif name.startswith('CLOSEP') or name=='CLOSE':col['close']=i
+                    elif name in('VOLUME','VOLUME*'):col['vol']=i
+                if not debug_done:
+                    log.info(f"AlphaFetch-DEBUG({letter}): header={header_txt[:10]} col_map={col}")
+                if not all(k in col for k in('sym','ltp','high','low')):continue
+                for row in rows[1:]:
+                    cells=row.find_all("td")
+                    if max(col.values())>=len(cells):continue
+                    try:
+                        sym=cells[col['sym']].get_text(strip=True).upper()
+                        if not sym or len(sym)<2:continue
+                        ltp=float(cells[col['ltp']].get_text(strip=True).replace(',','') or 0)
+                        hi=float(cells[col['high']].get_text(strip=True).replace(',','') or 0)
+                        lo=float(cells[col['low']].get_text(strip=True).replace(',','') or 0)
+                        vol=float(cells[col['vol']].get_text(strip=True).replace(',','') or 0) if 'vol' in col else 0
+                        if ltp>0:
+                            stocks[sym]={'symbol':sym,'ltp':ltp,'high':hi if hi>0 else ltp,
+                                         'low':lo if lo>0 else ltp,'volume':vol,'change':0}
+                    except:continue
+            debug_done=True
+            time.sleep(1)  # respectful delay between letter pages
+        except Exception as e:
+            log.error(f"fetch_stocks_alpha({letter}): {e}")
+            continue
+    return stocks
+
 def fetch_stocks():
     log.info("DSE fetch...")
     url="https://www.dsebd.org/latest_share_price_scroll_by_value.php"
@@ -1292,6 +1357,22 @@ async def auto_update_data(bot):
     log.info("Auto update...")
     stocks=fetch_stocks()
     if not stocks:return
+    # fetch_stocks() only covers the 'by value' page (top-turnover regular
+    # equities) - Mutual Funds and other low-price-but-actively-traded
+    # instruments never appear there. Supplement with the alphabet-listing
+    # pages, but only ADD symbols not already present (fetch_stocks()'s
+    # data has more fields like real volume, so don't overwrite it).
+    existing_syms={s['symbol'] for s in stocks}
+    try:
+        alpha_stocks=fetch_stocks_alpha()
+        added=0
+        for sym,data in alpha_stocks.items():
+            if sym not in existing_syms:
+                stocks.append(data)
+                added+=1
+        log.info(f"Alpha-page supplement: +{added} symbols (e.g. Mutual Funds) not in by-value list")
+    except Exception as e:
+        log.error(f"Alpha-page supplement failed: {e}")
     updated=0
     for s in stocks:
         try:
