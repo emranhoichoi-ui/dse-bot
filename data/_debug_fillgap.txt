@@ -1,12 +1,12 @@
-Trading dates to fill: 138
-From 2026-01-25 to 2026-08-04
-Dates already filled: 124
+Trading dates to fill: 139
+From 2026-01-25 to 2026-08-05
+Dates already filled: 125
 Dates to fill: 14
 [1/14] Fetching 2026-01-25...
 === DEBUG for 2026-01-25 ===
 URL: https://www.dsebd.org/day_end_archive.php?endDate=2026-01-25&archive=data
 HTTP status: 200
-Response length: 292063 chars
+Response length: 292065 chars
 First 500 chars of response:
 <!DOCTYPE html>
 <html lang="en">
@@ -70,9 +70,9 @@ Tables found: 396
 [13/14] Fetching 2026-07-01...
   2026-07-01: parsed 0 stocks (header_map={})
   No data for 2026-07-01 (market may have been closed, or fetch failed)
-[14/14] Fetching 2026-08-04...
-  2026-08-04: parsed 0 stocks (header_map={})
-  No data for 2026-08-04 (market may have been closed, or fetch failed)
+[14/14] Fetching 2026-08-05...
+  2026-08-05: parsed 0 stocks (header_map={})
+  No data for 2026-08-05 (market may have been closed, or fetch failed)
 
 === DONE ===
 Filled 0 dates, 0 total rows added
