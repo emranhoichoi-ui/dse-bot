@@ -1240,17 +1240,35 @@ def is_dse_trading_day(date_str):
     banay - direct check kori. Eta e "aj shotti trade hoyeche kina"
     er shobcheye reliable indicator, fixed holiday calendar maintain
     korar dorkar nei.
+
+    NOTE: age eta shudhu ?endDate=... diye query hoto, kintu oi
+    single-date-only form dsebd.org theke আসল archive table dey na -
+    ekta live ticker-strip page dey (always kichu-na-kichu table 2+ row
+    soho thake), tai age eta সবসময় True return korto (real bug, found
+    2026-08 via a Telegram error report). ?startDate=X&endDate=X
+    (range form, same date dutoy) shothik archive table dey - eta age
+    e proven hoyeche (user er manual gap-fill CSV download e eki
+    endpoint pattern e kaj korechilo). Time-of-day er upor nirbhor kore
+    na, tai auto_update_data (9:30am, market khular age) ar
+    send_signals (noon) - dutor jonnoi shothik.
     """
     try:
-        url=f"https://www.dsebd.org/day_end_archive.php?endDate={date_str}&archive=data"
+        url=f"https://www.dsebd.org/day_end_archive.php?startDate={date_str}&endDate={date_str}&archive=data"
         r=requests.get(url,headers=HEADERS,timeout=15,verify=False)
+        log.info(f"TradingDayCheck({date_str}): HTTP {r.status_code}, response length {len(r.text)}")
         if r.status_code!=200:return None  # network issue - "unknown", caller decide
         soup=BeautifulSoup(r.text,'html.parser')
         tables=soup.find_all('table')
-        # Kono table na thakle, ba row na thakle - trade hoyni (chhuti)
+        log.info(f"TradingDayCheck({date_str}): {len(tables)} tables found")
         for t in tables:
-            if len(t.find_all('tr'))>1:return True
-        return False
+            rows=t.find_all('tr')
+            if len(rows)<2:continue
+            header_txt=' '.join(c.get_text(strip=True).upper() for c in rows[0].find_all(['th','td']))
+            if 'TRADING CODE' in header_txt or 'LTP' in header_txt:
+                log.info(f"TradingDayCheck({date_str}): real archive table found ({len(rows)} rows) -> trading day")
+                return True  # real archive table with actual columns - trade hoyeche
+        log.info(f"TradingDayCheck({date_str}): no real data table -> treating as non-trading day")
+        return False  # kono real data table nei - chhuti
     except Exception as e:
         log.error(f"TradingDayCheck: {e}")
         return None  # unknown - caller e defensive thakte hobe
