@@ -867,7 +867,7 @@ def scan_breakouts(stocks):
         })
 
     candidates.sort(key=lambda x:x['score'],reverse=True)
-    return candidates[:8]
+    return candidates[:5]
 
 # ══════════════════════
 #  DSE LIVE
