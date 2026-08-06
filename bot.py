@@ -875,6 +875,15 @@ def fetch_stocks_alpha():
     thake - eta diye shei gap fill kora hoy. Prottekta letter (A-Z)
     ebong '#' (numeric-starting symbol jemon 1JANATAMF) er jonno
     আলাদা page - total 27ta request.
+
+    NOTE (2026-08-06 debug log theke confirm hoyeche): ei page e
+    protita row/section er nijer আলাদা <table> tag ache (ekta page e
+    ~400 tables!) - header ekta table e, data rows onno shob table e
+    chorano. Tai table-by-table process korle header pawa table e
+    data thake na, ar data thaka table e header thake na - kono
+    row e parse hoy na. Fix: table boundary ignore kore pura page
+    theke shob <tr> ekshathe collect kori, header ekbar pele shei
+    col_map pura page er jonno reuse kori.
     """
     letters=list('ABCDEFGHIJKLMNOPQRSTUVWXYZ')+['#']
     stocks={}
@@ -887,39 +896,47 @@ def fetch_stocks_alpha():
                 log.info(f"AlphaFetch-DEBUG({letter}): HTTP {r.status_code}, response length {len(r.text)}")
             if r.status_code!=200:continue
             soup=BeautifulSoup(r.text,"html.parser")
-            tables_found=soup.find_all("table")
+            all_rows=soup.find_all("tr")
             if not debug_done:
-                log.info(f"AlphaFetch-DEBUG({letter}): {len(tables_found)} tables found")
-            for table in tables_found:
-                rows=table.find_all("tr")
-                if len(rows)<2:continue
-                header_cells=rows[0].find_all(["th","td"])
-                header_txt=[h.get_text(strip=True).upper() for h in header_cells]
-                col={}
-                for i,name in enumerate(header_txt):
-                    if ('TRADING' in name and 'CODE' in name) or name in('SYMBOL','SCRIP'):col['sym']=i
-                    elif name.startswith('LTP'):col['ltp']=i
-                    elif name in('HIGH','HIGH*'):col['high']=i
-                    elif name in('LOW','LOW*'):col['low']=i
-                    elif name.startswith('CLOSEP') or name=='CLOSE':col['close']=i
-                    elif name in('VOLUME','VOLUME*'):col['vol']=i
-                if not debug_done:
-                    log.info(f"AlphaFetch-DEBUG({letter}): header={header_txt[:10]} col_map={col}")
+                log.info(f"AlphaFetch-DEBUG({letter}): {len(all_rows)} total <tr> found (table boundaries ignored)")
+
+            col={}
+            found=0
+            for row in all_rows:
+                cells=row.find_all(["td","th"])
+                if not cells:continue
+                cell_txt=[c.get_text(strip=True) for c in cells]
+                upper_txt=[c.upper() for c in cell_txt]
+
+                # is this the header row? (only needed once)
+                if not col and 'TRADING CODE' in ' '.join(upper_txt):
+                    for i,name in enumerate(upper_txt):
+                        if ('TRADING' in name and 'CODE' in name) or name in('SYMBOL','SCRIP'):col['sym']=i
+                        elif name.startswith('LTP'):col['ltp']=i
+                        elif name in('HIGH','HIGH*'):col['high']=i
+                        elif name in('LOW','LOW*'):col['low']=i
+                        elif name.startswith('CLOSEP') or name=='CLOSE':col['close']=i
+                        elif name in('VOLUME','VOLUME*'):col['vol']=i
+                    if not debug_done:
+                        log.info(f"AlphaFetch-DEBUG({letter}): header found ={upper_txt} col_map={col}")
+                    continue
+
                 if not all(k in col for k in('sym','ltp','high','low')):continue
-                for row in rows[1:]:
-                    cells=row.find_all("td")
-                    if max(col.values())>=len(cells):continue
-                    try:
-                        sym=cells[col['sym']].get_text(strip=True).upper()
-                        if not sym or len(sym)<2:continue
-                        ltp=float(cells[col['ltp']].get_text(strip=True).replace(',','') or 0)
-                        hi=float(cells[col['high']].get_text(strip=True).replace(',','') or 0)
-                        lo=float(cells[col['low']].get_text(strip=True).replace(',','') or 0)
-                        vol=float(cells[col['vol']].get_text(strip=True).replace(',','') or 0) if 'vol' in col else 0
-                        if ltp>0:
-                            stocks[sym]={'symbol':sym,'ltp':ltp,'high':hi if hi>0 else ltp,
-                                         'low':lo if lo>0 else ltp,'volume':vol,'change':0}
-                    except:continue
+                if max(col.values())>=len(cells):continue
+                try:
+                    sym=cell_txt[col['sym']].upper()
+                    if not sym or len(sym)<2 or ' ' in sym:continue  # skip section labels like 'DSE TRAINING ACADEMY'
+                    ltp=float(cell_txt[col['ltp']].replace(',','') or 0)
+                    hi=float(cell_txt[col['high']].replace(',','') or 0)
+                    lo=float(cell_txt[col['low']].replace(',','') or 0)
+                    vol=float(cell_txt[col['vol']].replace(',','') or 0) if 'vol' in col else 0
+                    if ltp>0:
+                        stocks[sym]={'symbol':sym,'ltp':ltp,'high':hi if hi>0 else ltp,
+                                     'low':lo if lo>0 else ltp,'volume':vol,'change':0}
+                        found+=1
+                except:continue
+            if not debug_done:
+                log.info(f"AlphaFetch-DEBUG({letter}): parsed {found} symbols")
             debug_done=True
             time.sleep(1)  # respectful delay between letter pages
         except Exception as e:
