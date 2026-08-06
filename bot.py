@@ -1416,6 +1416,84 @@ async def auto_update_data(bot):
 # ══════════════════════
 #  SEND SIGNALS
 # ══════════════════════
+OPEN_SIGNALS_URL=f"{GITHUB_API}/open_signals.json"
+
+def get_open_signals():
+    """
+    BUY signal history GitHub-e persist kora hoy (data/open_signals.json) -
+    /tmp SQLite er moto na, jeta Railway redeploy hole muche jay. Format:
+    {"SYMBOL": {"entry":.., "sl":.., "tp1":.., "tp2":.., "tp3":..,
+                "stage":0, "date":"YYYY-MM-DD", "signal":"STRONG BUY"}}
+    stage: 0=kichu sell hoyni, 1=TP1 hit (half sell hoyeche), 2=TP2 hit
+    (aro quarter sell hoyeche) - TP3 ba SL hit hole entry shorabo (full close).
+    """
+    try:
+        gh={'Authorization':f'token {GITHUB_TOKEN}','Accept':'application/vnd.github.v3+json'}
+        r=requests.get(OPEN_SIGNALS_URL,headers=gh,timeout=15)
+        if r.status_code==404:return {},None
+        if r.status_code!=200:return {},None
+        info=r.json()
+        import base64,json as jsonlib
+        content=base64.b64decode(info['content']).decode('utf-8')
+        return jsonlib.loads(content),info['sha']
+    except Exception as e:
+        log.error(f"get_open_signals: {e}")
+        return {},None
+
+def save_open_signals(data,sha):
+    try:
+        gh={'Authorization':f'token {GITHUB_TOKEN}','Accept':'application/vnd.github.v3+json'}
+        import base64,json as jsonlib
+        enc=base64.b64encode(jsonlib.dumps(data,indent=2).encode()).decode()
+        payload={'message':f"Update open_signals {datetime.now(BD_TZ).strftime('%Y-%m-%d')}",'content':enc}
+        if sha:payload['sha']=sha
+        requests.put(OPEN_SIGNALS_URL,headers=gh,json=payload,timeout=20)
+    except Exception as e:
+        log.error(f"save_open_signals: {e}")
+
+def scan_sell_signals(open_sigs,stocks):
+    """Aj er live LTP diye protita open BUY position er SL/TP check kore.
+    Returns (sell_alerts list, updated open_sigs dict)."""
+    ltp_map={s['symbol']:s['ltp'] for s in stocks}
+    sell_alerts=[]
+    to_delete=[]
+    for sym,pos in open_sigs.items():
+        ltp=ltp_map.get(sym)
+        if ltp is None:continue  # aj er data e nei, porer din abar check hobe
+        entry=pos['entry'];sl=pos['sl'];tp1=pos['tp1'];tp2=pos.get('tp2',tp1);tp3=pos.get('tp3',tp2)
+        stage=pos.get('stage',0)
+        pl_pct=round((ltp-entry)/entry*100,1)
+
+        if ltp<=sl:
+            sell_alerts.append({'symbol':sym,'reason':'STOP LOSS HIT','ltp':ltp,'entry':entry,
+                                 'pl_pct':pl_pct,'action':'Shob shell kore felun (full exit)'})
+            to_delete.append(sym)
+        elif stage<3 and ltp>=tp3:
+            sell_alerts.append({'symbol':sym,'reason':'TP3 HIT (Max Target)','ltp':ltp,'entry':entry,
+                                 'pl_pct':pl_pct,'action':'Baki shob sell kore din (full exit)'})
+            to_delete.append(sym)
+        elif stage<2 and ltp>=tp2:
+            sell_alerts.append({'symbol':sym,'reason':'TP2 HIT','ltp':ltp,'entry':entry,
+                                 'pl_pct':pl_pct,'action':'Aro ekta quarter sell korun, baki hold'})
+            open_sigs[sym]['stage']=2
+        elif stage<1 and ltp>=tp1:
+            sell_alerts.append({'symbol':sym,'reason':'TP1 HIT','ltp':ltp,'entry':entry,
+                                 'pl_pct':pl_pct,'action':'Half sell korun, baki hold'})
+            open_sigs[sym]['stage']=1
+
+    for sym in to_delete:
+        open_sigs.pop(sym,None)
+    return sell_alerts,open_sigs
+
+def fmt_sell(sells):
+    if not sells:return ""
+    lines=["\n\n💰 SELL SIGNAL -- "+f"{len(sells)} ti (age buy signal deya stock)"]
+    for s in sells:
+        lines.append(f"\n>>> {s['symbol']} | {s['reason']} <<<")
+        lines.append(f"Entry:{s['entry']} | Ekhon:{s['ltp']} | P/L:{s['pl_pct']:+.1f}%")
+        lines.append(f"Koroniyo: {s['action']}")
+    return "\n".join(lines)
+
 async def send_signals(bot):
     log.info("Signal job...")
     today=datetime.now(BD_TZ).strftime('%Y-%m-%d')
@@ -1434,6 +1512,31 @@ async def send_signals(bot):
         breakouts=scan_breakouts(stocks)
         scored=analyze(stocks,use_hist=True)
         msg=build_msg(scored,breakouts,dsex)
+
+        # ══ SELL SIGNAL TRACKING ══
+        # Age BUY/STRONG BUY deya stock gulor SL/TP aj er live price diye
+        # check kori, hit hole SELL section jog kori. Notun BUY/STRONG BUY
+        # asha stock gulo o tracking-e jog kori.
+        try:
+            open_sigs,sha=get_open_signals()
+            sell_alerts,open_sigs=scan_sell_signals(open_sigs,stocks)
+            msg+=fmt_sell(sell_alerts)
+
+            for s in scored:
+                if s['signal'] in('BUY','STRONG BUY') and s['symbol'] not in open_sigs:
+                    open_sigs[s['symbol']]={'entry':s['entry'],'sl':s['sl'],
+                        'tp1':s['tp1'],'tp2':s.get('tp2',s['tp1']),
+                        'tp3':s.get('tp2',s['tp1'])*1.3,  # analyze() e tp3 nei, tp2 theke estimate
+                        'stage':0,'date':today,'signal':s['signal']}
+            for b in breakouts:
+                if b['symbol'] not in open_sigs:
+                    open_sigs[b['symbol']]={'entry':b['entry'],'sl':b['sl'],
+                        'tp1':b['tp1'],'tp2':b['tp2'],'tp3':b['tp3'],
+                        'stage':0,'date':today,'signal':'BREAKOUT'}
+
+            save_open_signals(open_sigs,sha)
+        except Exception as e:
+            log.error(f"Sell-signal tracking error: {e}")
 
         # Bristhoshpotibar (Thursday) e shoptaher shesh trading din - weekly
         # candle close hoy tokhon, tai Triple-Confirmation scanner shudhu ei
