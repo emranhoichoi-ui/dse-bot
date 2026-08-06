@@ -120,26 +120,36 @@ def ema(data,p):
     return round(v,2)
 
 def rsi(closes,p=14):
+    """Wilder's smoothing method (industry standard - matches TradingView,
+    most broker apps). Verified against BullBd's live chart for SONARGAON:
+    old simple-average method gave 76.6 (falsely flagged 'overbought'),
+    Wilder's method gives 68.7, matching BullBd's 68.72 almost exactly."""
     if len(closes)<p+1:return 50.0
-    g,l=[],[]
-    for i in range(1,len(closes)):
-        d=closes[i]-closes[i-1];g.append(max(d,0));l.append(max(-d,0))
-    ag=sum(g[-p:])/p;al=sum(l[-p:])/p
-    if al==0:return 100.0
-    return round(100-(100/(1+ag/al)),1)
+    diffs=[closes[i]-closes[i-1] for i in range(1,len(closes))]
+    gains=[max(d,0) for d in diffs];losses=[max(-d,0) for d in diffs]
+    avg_gain=sum(gains[:p])/p
+    avg_loss=sum(losses[:p])/p
+    for i in range(p,len(gains)):
+        avg_gain=(avg_gain*(p-1)+gains[i])/p
+        avg_loss=(avg_loss*(p-1)+losses[i])/p
+    if avg_loss==0:return 100.0
+    return round(100-(100/(1+avg_gain/avg_loss)),1)
 
 def rsi_series(closes,p=14):
-    """Full RSI series (same method as rsi() above, applied at every point).
-    None where not yet computable."""
+    """Full RSI series (Wilder's smoothing, same method as rsi() above,
+    applied at every point). None where not yet computable."""
     n=len(closes)
     if n<p+1:return [None]*n
     diffs=[closes[i]-closes[i-1] for i in range(1,n)]
     gains=[max(d,0) for d in diffs];losses=[max(-d,0) for d in diffs]
     series=[None]*n
-    for i in range(p,n):
-        g=gains[i-p:i];l=losses[i-p:i]
-        ag=sum(g)/p;al=sum(l)/p
-        series[i]=100.0 if al==0 else 100-(100/(1+ag/al))
+    avg_gain=sum(gains[:p])/p
+    avg_loss=sum(losses[:p])/p
+    series[p]=100.0 if avg_loss==0 else 100-(100/(1+avg_gain/avg_loss))
+    for i in range(p,len(gains)):
+        avg_gain=(avg_gain*(p-1)+gains[i])/p
+        avg_loss=(avg_loss*(p-1)+losses[i])/p
+        series[i+1]=100.0 if avg_loss==0 else 100-(100/(1+avg_gain/avg_loss))
     return series
 
 def rsi_ma50_cross_bullish(closes,p=14,ma_p=50,zone=(30,40)):
