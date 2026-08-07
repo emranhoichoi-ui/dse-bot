@@ -666,9 +666,12 @@ def get_ind(symbol):
     support=support[:4]  # top 4 closest
 
     # Nearest resistance for TP adjustment
-    nearest_r1=resistance[0][0] if resistance else last*1.10
-    nearest_r2=resistance[1][0] if len(resistance)>1 else last*1.20
-    nearest_r3=resistance[2][0] if len(resistance)>2 else last*1.35
+    # 0 = kono real resistance pawa jayni (synthetic placeholder na, jeta
+    # dekhle mone hoy resistance ache athocho kichu na - age eta confusion
+    # toiri korchilo debug korar shomoy)
+    nearest_r1=resistance[0][0] if resistance else 0
+    nearest_r2=resistance[1][0] if len(resistance)>1 else 0
+    nearest_r3=resistance[2][0] if len(resistance)>2 else 0
     nearest_r1_label=resistance[0][1] if resistance else ''
     
     # MA200 warning
@@ -2209,14 +2212,16 @@ def scan_momentum(stocks):
 
         if score<8:continue
 
-        # TP1 must be at least 8% from entry
-        # Check nearest resistance - if too close, skip
+        # TP1 must be at least 10% from entry
+        # Check nearest resistance - if a REAL one is too close, skip.
+        # nearest_r1=0 means no resistance found at all (get_ind() returns
+        # 0 honestly now, not a fake ltp*1.10 placeholder) - that means
+        # full room ahead, so it should NOT trigger the skip.
         ltp_=s['ltp']
-        nearest_r=daily_ind.get('nearest_r1',ltp_*1.15) if daily_ind.get('ok') else ltp_*1.15
+        nearest_r=daily_ind.get('nearest_r1',0) if daily_ind.get('ok') else 0
         min_tp1=ltp_*1.10
-        # If resistance is within 5% - not enough room
-        if nearest_r < min_tp1:
-            continue  # Skip - resistance too close
+        if nearest_r and nearest_r < min_tp1:
+            continue  # Skip - real resistance too close
 
         s['daily_ind']=daily_ind  # Save for fmt_momentum
 
