@@ -598,5 +598,25 @@
     "stage": 0,
     "date": "2026-08-06",
     "signal": "BUY"
+  },
+  "FAREASTLIF": {
+    "date": "2026-07-09",
+    "entry": 22.8,
+    "sl": 20.2,
+    "tp1": 28.0,
+    "tp2": 33.2,
+    "tp3": 38.4,
+    "signal": "BREAKOUT",
+    "stage": 0
+  },
+  "GHCL": {
+    "date": "2026-07-16",
+    "entry": 22.9,
+    "sl": 16.86,
+    "tp1": 31.96,
+    "tp2": 41.02,
+    "tp3": 53.1,
+    "signal": "GIANT",
+    "stage": 0
   }
 }
