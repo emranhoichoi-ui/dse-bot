@@ -477,6 +477,7 @@ def get_ind(symbol):
                'structure':'unknown','structure_desc':'N/A',
                'recent_swing_low':None,'pre_breakout_high':0,
                'near_resistance':False,'rsi_ma50_cross':False,
+               'long_term_warning':0,'long_term_warning_pct':0,
                'trend_ok':True}  # trend_ok = allow signal
 
     closes=data['closes'];highs=data['highs']
@@ -673,6 +674,23 @@ def get_ind(symbol):
     nearest_r2=resistance[1][0] if len(resistance)>1 else 0
     nearest_r3=resistance[2][0] if len(resistance)>2 else 0
     nearest_r1_label=resistance[0][1] if resistance else ''
+
+    # ══ SECONDARY: LONG-TERM RESISTANCE WARNING (~750 trading row =
+    # ruffly 3 calendar bochor, DSE Sun-Thu trading week hisebe) ══
+    # Ei level TP cap korte use hoy na (shudhu upore-r 120-diner
+    # resistance-i TP cap kore) - eta shudhu ekta "shotorkota" tag,
+    # jate purono-kintu-important level (jemon NITOLINS er 2023-er
+    # rounded top, ~677 trading row dure) completely miss na hoy,
+    # athocho TP-o miche-mich narrow na hoy shob jaygay.
+    long_term_warning=0;long_term_warning_pct=0
+    lt_swing_highs=find_swing_highs(highs,closes,lookback=750)
+    for val in lt_swing_highs:
+        if val>last*1.005:
+            already_known=any(abs(val-rv)/max(rv,1)<0.025 for rv,_ in resistance)
+            if not already_known:
+                long_term_warning=val
+                long_term_warning_pct=round((val-last)/last*100,1)
+                break
     
     # MA200 warning
     ma200_warning=''
@@ -717,6 +735,7 @@ def get_ind(symbol):
         'structure':structure,'structure_desc':structure_desc,
         'recent_swing_low':rsw,'pre_breakout_high':pre_breakout_high,
         'near_resistance':near_resistance,'rsi_ma50_cross':rsi_ma50_cross,
+        'long_term_warning':long_term_warning,'long_term_warning_pct':long_term_warning_pct,
     }
 
 # ══════════════════════
@@ -775,6 +794,13 @@ def scan_breakouts(stocks):
         if ind.get('rsi_ma50_cross'):
             score+=w.get('rsi_ma50_cross',5);sigs.append("RSI x MA50 Cross!");binds.append('rsi_ma50_cross')
             reasons.append("RSI nijer 50-diner MA cross korlo 30-40 zone e - backtest-e strong signal")
+
+        # Long-term (~3 bochor) resistance warning - score/TP-e kono provhab
+        # fele na, shudhu shotorkota - purono kintu important level jate
+        # completely miss na hoy (120-diner lookback-er baire thakle)
+        if ind.get('long_term_warning'):
+            sigs.append(f"⚠️LT-Resistance {ind['long_term_warning']}")
+            reasons.append(f"Shabdhan: {ind['long_term_warning']} (+{ind['long_term_warning_pct']}%) e ekta purono (~3 bochorer modhdhe) resistance ache, jeta 120-diner TP calc-e dhora pore na")
 
         # 6. Market Structure (BOS/CHoCH)
         struct=ind.get('structure','unknown')
@@ -1072,6 +1098,11 @@ def analyze(stocks,use_hist=False):
                 score+=w.get('rsi_ma50_cross',5);tags.append("RSI x MA50 Cross!");inds.append('rsi_ma50_cross')
                 reasons.append("RSI nijer 50-diner MA cross korlo 30-40 zone e - backtest-e strong signal")
             else:tags.append(f"RSI:{r}")
+
+            # Long-term (~3 bochor) resistance warning - score/TP-e provhab nei
+            if ind.get('long_term_warning'):
+                tags.append(f"⚠️LT-Resistance {ind['long_term_warning']}")
+                warnings.append(f"{ind['long_term_warning']} (+{ind['long_term_warning_pct']}%) e purono resistance ache (~3 bochor)")
 
             # MACD
             if ind['macd_h']>0 and ind['macd']>ind['macd_sig']:
