@@ -1154,11 +1154,43 @@ def analyze(stocks,use_hist=False):
         elif score<=-7:signal="SELL"
         else:signal="HOLD"
 
-        sl=round(lo*0.993,2);risk=ltp-sl
+        # SL: prefer the actual pre-breakout/pre-move resistance level (old
+        # resistance = new support), then recent confirmed pivot low, then
+        # today's low - same proven logic as the breakout scanner. 20% max-risk cap.
+        sh_level=ind.get('pre_breakout_high',0) if ind.get('ok') else 0
+        rsw=ind.get('recent_swing_low') if ind.get('ok') else None
+        if sh_level and sh_level>0 and sh_level<ltp:
+            sl_raw=sh_level*0.97
+        elif rsw and rsw>0 and rsw<ltp:
+            sl_raw=rsw*0.99
+        elif lo>0:
+            sl_raw=lo*0.993
+        else:
+            sl_raw=ltp*0.93
+        max_risk_sl=ltp*0.80
+        sl=round(max(sl_raw,max_risk_sl),2)
+        risk=ltp-sl
         if risk<=0:risk=ltp*0.04
-        tp1=round(max(ltp*(1+TP1_MIN),ltp+risk*2.5),2)
-        tp2=round(max(ltp*(1+TP2_MIN),ltp+risk*4.5),2)
-        s.update({'score':round(score,1),'signal':signal,'tags':tags,'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,
+
+        tp1_mech=max(ltp*(1+TP1_MIN),ltp+risk*2.5)   # TP1_MIN=10% floor
+        tp2_mech=max(ltp*(1+TP2_MIN),ltp+risk*4.5)
+        tp3_mech=max(ltp*1.50,ltp+risk*6)
+
+        # Cap each TP at real nearby resistance (nearest_r1/r2/r3), same as
+        # breakout scanner, so targets don't ignore actual chart resistance.
+        r1=ind.get('nearest_r1',0) or 0
+        r2=ind.get('nearest_r2',0) or 0
+        r3=ind.get('nearest_r3',0) or 0
+        min_r1=ltp*(1+TP1_MIN);min_r2=ltp*(1+TP2_MIN);min_r3=ltp*1.35
+        tp1=round(r1*0.98,2) if min_r1<r1<tp1_mech else round(tp1_mech,2)
+        tp2_cap=r2 if r2>tp1 else 0
+        tp2=round(tp2_cap*0.98,2) if tp2_cap and min_r2<tp2_cap<tp2_mech else round(tp2_mech,2)
+        tp2=max(tp2,round(tp1*1.03,2))  # monotonic safety
+        tp3_cap=r3 if r3>tp2 else 0
+        tp3=round(tp3_cap*0.98,2) if tp3_cap and min_r3<tp3_cap<tp3_mech else round(tp3_mech,2)
+        tp3=max(tp3,round(tp2*1.03,2))  # monotonic safety
+
+        s.update({'score':round(score,1),'signal':signal,'tags':tags,'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3,
                   'reasons':reasons,'inds':inds,'warnings':warnings})
         scored.append(s)
 
@@ -1242,6 +1274,7 @@ def fmt_sig(s):
     fib=ind.get('fib_level','none') if ind.get('ok') else 'none'
     tp1p=round((s['tp1']-s['ltp'])/s['ltp']*100,1)
     tp2p=round((s['tp2']-s['ltp'])/s['ltp']*100,1)
+    tp3p=round((s.get('tp3',s['tp2'])-s['ltp'])/s['ltp']*100,1)
     lines=[
         f">> {s['symbol']} | {s['signal']} | Score:{s['score']}",
         f"   Daam: {s['ltp']} ({s['change']:+.1f}%) | Vol:{s['volume']:,}",
@@ -1255,7 +1288,7 @@ def fmt_sig(s):
         lines.append(f"   Structure: {struct.replace('_',' ')}")
     lines+=[
         f"   Entry:{s['entry']} | SL:{s['sl']}",
-        f"   TP1:{s['tp1']} (+{tp1p}%) | TP2:{s['tp2']} (+{tp2p}%)",
+        f"   TP1:{s['tp1']} (+{tp1p}%) | TP2:{s['tp2']} (+{tp2p}%) | TP3:{s.get('tp3',s['tp2'])} (+{tp3p}%)",
     ]
     if s.get('warnings'):lines.append(f"   !! {s['warnings'][0]}")
     lines.append("")
@@ -1537,7 +1570,7 @@ async def send_signals(bot):
                 if s['signal'] in('BUY','STRONG BUY'):
                     open_sigs[s['symbol']]={'entry':s['entry'],'sl':s['sl'],
                         'tp1':s['tp1'],'tp2':s.get('tp2',s['tp1']),
-                        'tp3':s.get('tp2',s['tp1'])*1.3,  # analyze() e tp3 nei, tp2 theke estimate
+                        'tp3':s.get('tp3',s.get('tp2',s['tp1'])*1.3),  # ekhon analyze() e real tp3 ache
                         'stage':0,'date':today,'signal':s['signal']}
             for b in breakouts:
                 open_sigs[b['symbol']]={'entry':b['entry'],'sl':b['sl'],
