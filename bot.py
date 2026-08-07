@@ -1524,25 +1524,25 @@ async def send_signals(bot):
         msg=build_msg(scored,breakouts,dsex)
 
         # ══ SELL SIGNAL TRACKING ══
-        # Age BUY/STRONG BUY deya stock gulor SL/TP aj er live price diye
-        # check kori, hit hole SELL section jog kori. Notun BUY/STRONG BUY
-        # asha stock gulo o tracking-e jog kori.
+        # Notun BUY/STRONG BUY/BREAKOUT signal ashle SOBSOMOY entry/SL/TP
+        # update kore dei (purono na, sob shomoy shobcheye recent signal-i
+        # basis dhora hoy - user er nirdesh onujayi). Stage reset hoy (0)
+        # karon notun entry theke abar SL/TP1/TP2/TP3 track shuru hobe.
         try:
             open_sigs,sha=get_open_signals()
             sell_alerts,open_sigs=scan_sell_signals(open_sigs,stocks)
             msg+=fmt_sell(sell_alerts)
 
             for s in scored:
-                if s['signal'] in('BUY','STRONG BUY') and s['symbol'] not in open_sigs:
+                if s['signal'] in('BUY','STRONG BUY'):
                     open_sigs[s['symbol']]={'entry':s['entry'],'sl':s['sl'],
                         'tp1':s['tp1'],'tp2':s.get('tp2',s['tp1']),
                         'tp3':s.get('tp2',s['tp1'])*1.3,  # analyze() e tp3 nei, tp2 theke estimate
                         'stage':0,'date':today,'signal':s['signal']}
             for b in breakouts:
-                if b['symbol'] not in open_sigs:
-                    open_sigs[b['symbol']]={'entry':b['entry'],'sl':b['sl'],
-                        'tp1':b['tp1'],'tp2':b['tp2'],'tp3':b['tp3'],
-                        'stage':0,'date':today,'signal':'BREAKOUT'}
+                open_sigs[b['symbol']]={'entry':b['entry'],'sl':b['sl'],
+                    'tp1':b['tp1'],'tp2':b['tp2'],'tp3':b['tp3'],
+                    'stage':0,'date':today,'signal':'BREAKOUT'}
 
             save_open_signals(open_sigs,sha)
         except Exception as e:
