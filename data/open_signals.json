@@ -89,6 +89,16 @@
     "date": "2026-07-15",
     "signal": "BUY"
   },
+  "GBBPOWER": {
+    "entry": 8.2,
+    "sl": 8.04,
+    "tp1": 8.86,
+    "tp2": 9.84,
+    "tp3": 12.79,
+    "stage": 2,
+    "date": "2026-07-15",
+    "signal": "BUY"
+  },
   "PREMIERLEA": {
     "entry": 2.3,
     "sl": 2.09,
@@ -405,8 +415,18 @@
     "tp1": 2.28,
     "tp2": 2.5,
     "tp3": 3.25,
-    "stage": 1,
+    "stage": 2,
     "date": "2026-08-02",
+    "signal": "BUY"
+  },
+  "SIPLC": {
+    "entry": 126.4,
+    "sl": 117.17,
+    "tp1": 149.48,
+    "tp2": 167.94,
+    "tp3": 218.32,
+    "stage": 0,
+    "date": "2026-08-03",
     "signal": "BUY"
   },
   "NPOLYMER": {
