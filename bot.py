@@ -600,7 +600,13 @@ def get_ind(symbol):
 
     # ══ SUPPORT / RESISTANCE LEVELS ══
     def find_swing_highs(highs,closes,lookback=120,min_dist=5):
-        """Recent swing highs khoje bero kore"""
+        """Recent swing highs khoje bero kore.
+        NOTE: lookback ekhane raw TRADING ROW count - calendar din na
+        (DSE Sun-Thu trade kore, tai calendar somoy row-shonkha theke
+        beshi hoy, roughly x1.4). Default 120 row = ~191 calendar din
+        (~6.3 mash), 750 row (long-term warning check) = ~2.9 bochor.
+        Eta age ekbar bhul bujhe (365 row-ke "1 bochor" bhebe) bug hoyechilo -
+        tai eta explicitly note kora holo."""
         levels=[]
         lb=min(lookback,len(highs))
         h=highs[-lb:]
@@ -614,7 +620,9 @@ def get_ind(symbol):
         return sorted(set(levels))
 
     def find_swing_lows(lows,closes,lookback=120,min_dist=5):
-        """Recent swing lows khoje bero kore"""
+        """Recent swing lows khoje bero kore.
+        NOTE: lookback trading ROW count, calendar din na - dekho
+        find_swing_highs() er docstring."""
         levels=[]
         lb=min(lookback,len(lows))
         l=lows[-lb:]
@@ -625,7 +633,8 @@ def get_ind(symbol):
                     levels.append(round(l[i],2))
         return sorted(set(levels))
 
-    # Swing levels
+    # Swing levels - default lookback=120 trading row = ~191 calendar din
+    # (~6.3 mash), TP direct cap korte use hoy (nichey)
     swing_highs=find_swing_highs(highs,closes)
     swing_lows=find_swing_lows(lows,closes)
 
