@@ -448,8 +448,39 @@ def scan_triple_confirmation(stocks):
         mma20=sum(mcloses[-20:])/20
         if not(mcloses[-1]>mma20):continue
 
-        results.append({'symbol':sym,'ltp':ltp_map.get(sym,wcloses[-1]),
-                         'weekly_close':round(wcloses[-1],2)})
+        # SL/TP - agei kokhono jog kora hoyni, ekhon breakout/BUY SIGNAL er
+        # moto e resistance-based logic reuse kori (consistency-r jonno)
+        ind=get_ind(sym)
+        ltp=ltp_map.get(sym,wcloses[-1])
+        sh_level=ind.get('pre_breakout_high',0) if ind.get('ok') else 0
+        rsw=ind.get('recent_swing_low') if ind.get('ok') else None
+        if sh_level and sh_level>0 and sh_level<ltp:
+            sl_raw=sh_level*0.97
+        elif rsw and rsw>0 and rsw<ltp:
+            sl_raw=rsw*0.99
+        else:
+            sl_raw=ltp*0.93
+        sl=round(max(sl_raw,ltp*0.80),2)
+        risk=ltp-sl
+        if risk<=0:risk=ltp*0.05
+
+        tp1_mech=max(ltp*(1+TP1_MIN),ltp+risk*2)
+        tp2_mech=max(ltp*(1+TP2_MIN),ltp+risk*4)
+        tp3_mech=max(ltp*1.50,ltp+risk*6)
+        r1=ind.get('nearest_r1',0) or 0
+        r2=ind.get('nearest_r2',0) or 0
+        r3=ind.get('nearest_r3',0) or 0
+        min_r1=ltp*(1+TP1_MIN);min_r2=ltp*(1+TP2_MIN);min_r3=ltp*1.35
+        tp1=round(r1*0.98,2) if min_r1<r1<tp1_mech else round(tp1_mech,2)
+        tp2_cap=r2 if r2>tp1 else 0
+        tp2=round(tp2_cap*0.98,2) if tp2_cap and min_r2<tp2_cap<tp2_mech else round(tp2_mech,2)
+        tp2=max(tp2,round(tp1*1.03,2))
+        tp3_cap=r3 if r3>tp2 else 0
+        tp3=round(tp3_cap*0.98,2) if tp3_cap and min_r3<tp3_cap<tp3_mech else round(tp3_mech,2)
+        tp3=max(tp3,round(tp2*1.03,2))
+
+        results.append({'symbol':sym,'ltp':ltp,'weekly_close':round(wcloses[-1],2),
+                         'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3})
     return results
 
 def fmt_triple(results):
@@ -459,7 +490,12 @@ def fmt_triple(results):
            "(Weekly Golden Cross + MACD cross + 20-week high break + Monthly uptrend - shob ekshathe)",
            "(Biroloh, high-conviction signal - backtest e ~8% avg 12-week return dekhiyeche)\n"]
     for r in results[:15]:
+        tp1p=round((r['tp1']-r['entry'])/r['entry']*100,1)
+        tp2p=round((r['tp2']-r['entry'])/r['entry']*100,1)
+        tp3p=round((r['tp3']-r['entry'])/r['entry']*100,1)
         lines.append(f">>> {r['symbol']} | Weekly Close: {r['weekly_close']} | LTP: {r['ltp']}")
+        lines.append(f"    Entry:{r['entry']} | SL:{r['sl']}")
+        lines.append(f"    TP1:{r['tp1']} (+{tp1p}%) | TP2:{r['tp2']} (+{tp2p}%) | TP3:{r['tp3']} (+{tp3p}%)\n")
     return "\n".join(lines)
 
 # ══════════════════════
@@ -1631,6 +1667,13 @@ async def send_signals(bot):
             try:
                 triple=scan_triple_confirmation(stocks)
                 msg+=fmt_triple(triple)
+                if triple:
+                    open_sigs2,sha2=get_open_signals()
+                    for t in triple:
+                        open_sigs2[t['symbol']]={'entry':t['entry'],'sl':t['sl'],
+                            'tp1':t['tp1'],'tp2':t['tp2'],'tp3':t['tp3'],
+                            'stage':0,'date':today,'signal':'TRIPLE-CONFIRMATION'}
+                    save_open_signals(open_sigs2,sha2)
             except Exception as e:
                 log.error(f"Triple-confirmation scan error: {e}")
 
