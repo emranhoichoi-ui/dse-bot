@@ -2655,7 +2655,11 @@ async def cmd_learn(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
 async def post_init(app):
     init_db()
-    sched=AsyncIOScheduler(timezone='UTC')
+    sched=AsyncIOScheduler(timezone=BD_TZ)  # age 'UTC' chilo - tai hour=12 (BD 12pm
+    # uddesh) actually UTC 12pm e cholto, mane BD shondha 6ta! Market bondho
+    # howar (dupur 2ta) 4 ghonta pore - tokhon dsebd.org live page e kono
+    # data thake na, tai "Data nei" ashto. Ekhon shob cron hour BD shomoy
+    # hishebei cholbe (send_signals=12pm, auto_update_data=9:30am, etc.)
     sched.add_job(send_signals,'cron',day_of_week='sun,mon,tue,wed,thu',hour=12,minute=0,args=[app.bot])
     sched.add_job(auto_update_data,'cron',day_of_week='sun,mon,tue,wed,thu',hour=9,minute=30,args=[app.bot])
     sched.add_job(check_outcomes,'cron',hour=4,minute=0,args=[app.bot])
