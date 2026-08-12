@@ -2660,7 +2660,7 @@ async def post_init(app):
     # howar (dupur 2ta) 4 ghonta pore - tokhon dsebd.org live page e kono
     # data thake na, tai "Data nei" ashto. Ekhon shob cron hour BD shomoy
     # hishebei cholbe (send_signals=12pm, auto_update_data=9:30am, etc.)
-    sched.add_job(send_signals,'cron',day_of_week='sun,mon,tue,wed,thu',hour=12,minute=0,args=[app.bot])
+    sched.add_job(send_signals,'cron',day_of_week='sun,mon,tue,wed,thu',hour=19,minute=0,args=[app.bot])
     sched.add_job(auto_update_data,'cron',day_of_week='sun,mon,tue,wed,thu',hour=9,minute=30,args=[app.bot])
     sched.add_job(check_outcomes,'cron',hour=4,minute=0,args=[app.bot])
     sched.add_job(run_learning,'cron',hour=3,minute=0,args=[app.bot])
