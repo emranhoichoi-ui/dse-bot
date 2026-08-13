@@ -692,12 +692,12 @@
   "TUNGHAI": {
     "entry": 5.5,
     "sl": 4.4,
-    "tp1": 8.25,
-    "tp2": 10.45,
+    "tp1": 7.7,
+    "tp2": 9.9,
     "tp3": 12.1,
     "stage": 0,
     "date": "2026-08-13",
-    "signal": "BUY"
+    "signal": "TRIPLE-CONFIRMATION"
   },
   "FIRSTFIN": {
     "entry": 5.0,
