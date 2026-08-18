@@ -50,14 +50,14 @@
     "signal": "BREAKOUT"
   },
   "MATINSPINN": {
-    "entry": 63.9,
+    "entry": 66.2,
     "sl": 61.01,
-    "tp1": 70.29,
-    "tp2": 76.68,
-    "tp3": 95.85,
+    "tp1": 79.18,
+    "tp2": 89.56,
+    "tp3": 99.3,
     "stage": 0,
-    "date": "2026-08-17",
-    "signal": "BREAKOUT"
+    "date": "2026-08-18",
+    "signal": "STRONG BUY"
   },
   "PREMIERLEA": {
     "entry": 2.3,
@@ -140,13 +140,13 @@
     "signal": "BUY"
   },
   "RUNNERAUTO": {
-    "entry": 47.5,
-    "sl": 40.99,
-    "tp1": 63.77,
-    "tp2": 76.79,
-    "tp3": 86.56,
+    "entry": 49.4,
+    "sl": 46.07,
+    "tp1": 57.72,
+    "tp2": 64.38,
+    "tp3": 74.1,
     "stage": 0,
-    "date": "2026-08-17",
+    "date": "2026-08-18",
     "signal": "STRONG BUY"
   },
   "SHEPHERD": {
@@ -249,16 +249,6 @@
     "date": "2026-08-02",
     "signal": "BUY"
   },
-  "ASIAPACINS": {
-    "entry": 53.3,
-    "sl": 51.12,
-    "tp1": 58.75,
-    "tp2": 63.96,
-    "tp3": 79.95,
-    "stage": 0,
-    "date": "2026-08-17",
-    "signal": "BUY"
-  },
   "FBFIF": {
     "entry": 4.0,
     "sl": 3.57,
@@ -270,14 +260,14 @@
     "signal": "BUY"
   },
   "SIPLC": {
-    "entry": 154.1,
+    "entry": 156.5,
     "sl": 139.1,
-    "tp1": 191.6,
-    "tp2": 221.6,
-    "tp3": 244.1,
+    "tp1": 200.0,
+    "tp2": 234.8,
+    "tp3": 260.9,
     "stage": 0,
-    "date": "2026-08-17",
-    "signal": "STRONG BUY"
+    "date": "2026-08-18",
+    "signal": "BUY"
   },
   "NPOLYMER": {
     "entry": 37.5,
@@ -288,26 +278,6 @@
     "stage": 0,
     "date": "2026-08-04",
     "signal": "BREAKOUT"
-  },
-  "PRIMEFIN": {
-    "entry": 3.9,
-    "sl": 3.12,
-    "tp1": 4.7,
-    "tp2": 5.59,
-    "tp3": 6.27,
-    "stage": 0,
-    "date": "2026-08-04",
-    "signal": "BREAKOUT"
-  },
-  "ICICL": {
-    "entry": 38.0,
-    "sl": 36.67,
-    "tp1": 41.8,
-    "tp2": 45.6,
-    "tp3": 57.0,
-    "stage": 0,
-    "date": "2026-08-17",
-    "signal": "BUY"
   },
   "PHENIXINS": {
     "entry": 53.3,
@@ -320,13 +290,13 @@
     "signal": "STRONG BUY"
   },
   "SAIHAMTEX": {
-    "entry": 30.4,
-    "sl": 26.48,
-    "tp1": 40.2,
-    "tp2": 48.04,
-    "tp3": 53.92,
+    "entry": 31.4,
+    "sl": 28.13,
+    "tp1": 39.57,
+    "tp2": 46.11,
+    "tp3": 51.02,
     "stage": 0,
-    "date": "2026-08-16",
+    "date": "2026-08-18",
     "signal": "BUY"
   },
   "NITOLINS": {
@@ -340,23 +310,23 @@
     "signal": "BUY"
   },
   "PUBALIBANK": {
-    "entry": 40.2,
+    "entry": 40.3,
     "sl": 37.73,
-    "tp1": 46.38,
-    "tp2": 51.32,
-    "tp3": 60.3,
+    "tp1": 46.72,
+    "tp2": 51.86,
+    "tp3": 60.45,
     "stage": 0,
-    "date": "2026-08-17",
+    "date": "2026-08-18",
     "signal": "STRONG BUY"
   },
   "EASTERNINS": {
-    "entry": 67.6,
+    "entry": 65.2,
     "sl": 62.56,
-    "tp1": 77.68,
-    "tp2": 87.76,
-    "tp3": 101.4,
+    "tp1": 71.72,
+    "tp2": 78.24,
+    "tp3": 97.8,
     "stage": 0,
-    "date": "2026-08-17",
+    "date": "2026-08-18",
     "signal": "BREAKOUT"
   },
   "SONARGAON": {
@@ -369,25 +339,15 @@
     "date": "2026-08-17",
     "signal": "BUY"
   },
-  "DHAKAINS": {
-    "entry": 50.3,
-    "sl": 47.05,
-    "tp1": 56.8,
-    "tp2": 63.3,
-    "tp3": 75.45,
-    "stage": 0,
-    "date": "2026-08-11",
-    "signal": "BREAKOUT"
-  },
   "KOHINOOR": {
-    "entry": 553.9,
-    "sl": 511.83,
-    "tp1": 659.07,
-    "tp2": 743.21,
-    "tp3": 830.85,
+    "entry": 559.7,
+    "sl": 537.38,
+    "tp1": 615.67,
+    "tp2": 671.64,
+    "tp3": 839.55,
     "stage": 0,
-    "date": "2026-08-17",
-    "signal": "BUY"
+    "date": "2026-08-18",
+    "signal": "STRONG BUY"
   },
   "ILFSL": {
     "entry": 2.5,
@@ -450,14 +410,14 @@
     "signal": "BREAKOUT"
   },
   "BDLAMPS": {
-    "entry": 222.7,
-    "sl": 203.8,
-    "tp1": 269.95,
-    "tp2": 307.75,
-    "tp3": 336.1,
+    "entry": 221.7,
+    "sl": 208.55,
+    "tp1": 254.57,
+    "tp2": 280.87,
+    "tp3": 332.55,
     "stage": 0,
-    "date": "2026-08-17",
-    "signal": "STRONG BUY"
+    "date": "2026-08-18",
+    "signal": "BUY"
   },
   "NEWLINE": {
     "entry": 7.0,
@@ -468,16 +428,6 @@
     "stage": 0,
     "date": "2026-08-11",
     "signal": "STRONG BUY"
-  },
-  "GREENDELT": {
-    "entry": 72.1,
-    "sl": 69.74,
-    "tp1": 79.31,
-    "tp2": 86.52,
-    "tp3": 108.15,
-    "stage": 0,
-    "date": "2026-08-17",
-    "signal": "BUY"
   },
   "UNITEDINS": {
     "entry": 68.9,
@@ -508,16 +458,6 @@
     "stage": 0,
     "date": "2026-08-12",
     "signal": "STRONG BUY"
-  },
-  "GLOBALINS": {
-    "entry": 48.1,
-    "sl": 46.56,
-    "tp1": 52.91,
-    "tp2": 57.72,
-    "tp3": 72.15,
-    "stage": 0,
-    "date": "2026-08-17",
-    "signal": "BUY"
   },
   "ALLTEX": {
     "entry": 24.5,
@@ -570,33 +510,23 @@
     "signal": "STRONG BUY"
   },
   "NURANI": {
-    "entry": 3.8,
-    "sl": 3.3,
-    "tp1": 4.8,
-    "tp2": 5.8,
-    "tp3": 6.8,
+    "entry": 4.0,
+    "sl": 3.69,
+    "tp1": 4.62,
+    "tp2": 5.24,
+    "tp3": 6.0,
     "stage": 0,
-    "date": "2026-08-17",
+    "date": "2026-08-18",
     "signal": "BREAKOUT"
   },
-  "TAKAFULINS": {
-    "entry": 56.4,
-    "sl": 53.06,
-    "tp1": 64.75,
-    "tp2": 71.43,
-    "tp3": 84.6,
-    "stage": 0,
-    "date": "2026-08-16",
-    "signal": "BUY"
-  },
   "TUNGHAI": {
-    "entry": 5.3,
-    "sl": 4.27,
-    "tp1": 7.88,
-    "tp2": 9.94,
-    "tp3": 11.48,
+    "entry": 5.5,
+    "sl": 4.95,
+    "tp1": 6.88,
+    "tp2": 7.97,
+    "tp3": 8.8,
     "stage": 0,
-    "date": "2026-08-16",
+    "date": "2026-08-18",
     "signal": "BUY"
   },
   "FIRSTFIN": {
@@ -659,44 +589,14 @@
     "date": "2026-08-16",
     "signal": "STRONG BUY"
   },
-  "REPUBLIC": {
-    "entry": 44.1,
-    "sl": 41.13,
-    "tp1": 51.52,
-    "tp2": 57.46,
-    "tp3": 66.15,
-    "stage": 0,
-    "date": "2026-08-16",
-    "signal": "STRONG BUY"
-  },
-  "AAMRATECH": {
-    "entry": 22.8,
-    "sl": 21.63,
-    "tp1": 25.73,
-    "tp2": 28.07,
-    "tp3": 34.2,
-    "stage": 0,
-    "date": "2026-08-16",
-    "signal": "BUY"
-  },
   "SAMORITA": {
-    "entry": 103.1,
-    "sl": 96.9,
-    "tp1": 118.6,
-    "tp2": 131.0,
-    "tp3": 154.65,
+    "entry": 109.8,
+    "sl": 100.88,
+    "tp1": 127.64,
+    "tp2": 145.48,
+    "tp3": 164.7,
     "stage": 0,
-    "date": "2026-08-17",
-    "signal": "BUY"
-  },
-  "METROSPIN": {
-    "entry": 10.9,
-    "sl": 9.89,
-    "tp1": 12.92,
-    "tp2": 14.94,
-    "tp3": 16.96,
-    "stage": 0,
-    "date": "2026-08-13",
+    "date": "2026-08-18",
     "signal": "BREAKOUT"
   },
   "APEXTANRY": {
@@ -718,16 +618,6 @@
     "stage": 0,
     "date": "2026-08-16",
     "signal": "BREAKOUT"
-  },
-  "FEDERALINS": {
-    "entry": 31.0,
-    "sl": 29.97,
-    "tp1": 34.1,
-    "tp2": 37.2,
-    "tp3": 46.5,
-    "stage": 0,
-    "date": "2026-08-17",
-    "signal": "STRONG BUY"
   },
   "PROVATIINS": {
     "entry": 61.3,
@@ -760,14 +650,14 @@
     "signal": "STRONG BUY"
   },
   "DSHGARME": {
-    "entry": 188.2,
+    "entry": 188.0,
     "sl": 175.09,
-    "tp1": 220.97,
-    "tp2": 247.19,
-    "tp3": 282.3,
+    "tp1": 220.27,
+    "tp2": 246.09,
+    "tp3": 282.0,
     "stage": 0,
-    "date": "2026-08-17",
-    "signal": "STRONG BUY"
+    "date": "2026-08-18",
+    "signal": "BUY"
   },
   "PIONEERINS": {
     "entry": 73.9,
@@ -788,16 +678,6 @@
     "stage": 0,
     "date": "2026-08-17",
     "signal": "BUY"
-  },
-  "MAKSONSPIN": {
-    "entry": 6.8,
-    "sl": 6.5,
-    "tp1": 7.48,
-    "tp2": 8.16,
-    "tp3": 10.2,
-    "stage": 0,
-    "date": "2026-08-16",
-    "signal": "BREAKOUT"
   },
   "OAL": {
     "entry": 7.1,
@@ -820,14 +700,14 @@
     "signal": "BREAKOUT"
   },
   "KPCL": {
-    "entry": 12.0,
+    "entry": 11.8,
     "sl": 10.96,
-    "tp1": 14.08,
-    "tp2": 16.16,
-    "tp3": 18.24,
+    "tp1": 13.9,
+    "tp2": 15.58,
+    "tp3": 17.7,
     "stage": 0,
-    "date": "2026-08-17",
-    "signal": "BREAKOUT"
+    "date": "2026-08-18",
+    "signal": "BUY"
   },
   "PLFSL": {
     "entry": 2.2,
@@ -839,14 +719,24 @@
     "date": "2026-08-17",
     "signal": "BUY"
   },
-  "ZAHEENSPIN": {
-    "entry": 6.2,
-    "sl": 5.92,
-    "tp1": 6.82,
-    "tp2": 7.44,
-    "tp3": 9.3,
+  "ARAMIT": {
+    "entry": 222.1,
+    "sl": 213.21,
+    "tp1": 244.31,
+    "tp2": 266.52,
+    "tp3": 333.15,
     "stage": 0,
-    "date": "2026-08-17",
+    "date": "2026-08-18",
+    "signal": "BREAKOUT"
+  },
+  "ENVOYTEX": {
+    "entry": 63.9,
+    "sl": 59.66,
+    "tp1": 72.38,
+    "tp2": 80.86,
+    "tp3": 95.85,
+    "stage": 0,
+    "date": "2026-08-18",
     "signal": "BREAKOUT"
   }
 }
