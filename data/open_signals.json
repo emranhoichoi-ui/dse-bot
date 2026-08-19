@@ -50,13 +50,13 @@
     "signal": "BREAKOUT"
   },
   "MATINSPINN": {
-    "entry": 66.2,
-    "sl": 61.01,
-    "tp1": 79.18,
-    "tp2": 89.56,
-    "tp3": 99.3,
+    "entry": 67.5,
+    "sl": 61.98,
+    "tp1": 81.3,
+    "tp2": 92.34,
+    "tp3": 101.25,
     "stage": 0,
-    "date": "2026-08-18",
+    "date": "2026-08-19",
     "signal": "STRONG BUY"
   },
   "PREMIERLEA": {
@@ -140,14 +140,14 @@
     "signal": "BUY"
   },
   "RUNNERAUTO": {
-    "entry": 49.4,
+    "entry": 52.5,
     "sl": 46.07,
-    "tp1": 57.72,
-    "tp2": 64.38,
-    "tp3": 74.1,
+    "tp1": 68.58,
+    "tp2": 81.44,
+    "tp3": 91.08,
     "stage": 0,
-    "date": "2026-08-18",
-    "signal": "STRONG BUY"
+    "date": "2026-08-19",
+    "signal": "BUY"
   },
   "SHEPHERD": {
     "entry": 17.9,
@@ -260,13 +260,13 @@
     "signal": "BUY"
   },
   "SIPLC": {
-    "entry": 156.5,
-    "sl": 139.1,
-    "tp1": 200.0,
-    "tp2": 234.8,
-    "tp3": 260.9,
+    "entry": 147.2,
+    "sl": 142.59,
+    "tp1": 161.92,
+    "tp2": 176.64,
+    "tp3": 220.8,
     "stage": 0,
-    "date": "2026-08-18",
+    "date": "2026-08-19",
     "signal": "BUY"
   },
   "NPOLYMER": {
@@ -310,13 +310,13 @@
     "signal": "BUY"
   },
   "PUBALIBANK": {
-    "entry": 40.3,
-    "sl": 37.73,
-    "tp1": 46.72,
-    "tp2": 51.86,
-    "tp3": 60.45,
+    "entry": 40.0,
+    "sl": 37.83,
+    "tp1": 45.43,
+    "tp2": 49.77,
+    "tp3": 60.0,
     "stage": 0,
-    "date": "2026-08-18",
+    "date": "2026-08-19",
     "signal": "STRONG BUY"
   },
   "EASTERNINS": {
@@ -500,14 +500,14 @@
     "signal": "BREAKOUT"
   },
   "SOUTHEASTB": {
-    "entry": 11.7,
-    "sl": 11.25,
-    "tp1": 12.87,
-    "tp2": 14.04,
-    "tp3": 17.55,
+    "entry": 11.6,
+    "sl": 10.39,
+    "tp1": 14.02,
+    "tp2": 16.44,
+    "tp3": 18.86,
     "stage": 0,
-    "date": "2026-08-17",
-    "signal": "STRONG BUY"
+    "date": "2026-08-19",
+    "signal": "BREAKOUT"
   },
   "NURANI": {
     "entry": 4.0,
@@ -520,14 +520,14 @@
     "signal": "BREAKOUT"
   },
   "TUNGHAI": {
-    "entry": 5.5,
-    "sl": 4.95,
-    "tp1": 6.88,
-    "tp2": 7.97,
-    "tp3": 8.8,
+    "entry": 5.3,
+    "sl": 5.04,
+    "tp1": 5.95,
+    "tp2": 6.47,
+    "tp3": 7.95,
     "stage": 0,
-    "date": "2026-08-18",
-    "signal": "BUY"
+    "date": "2026-08-19",
+    "signal": "STRONG BUY"
   },
   "FIRSTFIN": {
     "entry": 5.0,
@@ -590,14 +590,14 @@
     "signal": "STRONG BUY"
   },
   "SAMORITA": {
-    "entry": 109.8,
-    "sl": 100.88,
-    "tp1": 127.64,
-    "tp2": 145.48,
-    "tp3": 164.7,
+    "entry": 113.5,
+    "sl": 101.07,
+    "tp1": 144.58,
+    "tp2": 169.44,
+    "tp3": 188.08,
     "stage": 0,
-    "date": "2026-08-18",
-    "signal": "BREAKOUT"
+    "date": "2026-08-19",
+    "signal": "BUY"
   },
   "APEXTANRY": {
     "entry": 114.8,
@@ -670,13 +670,13 @@
     "signal": "BUY"
   },
   "MALEKSPIN": {
-    "entry": 49.8,
-    "sl": 46.75,
-    "tp1": 57.42,
-    "tp2": 63.52,
-    "tp3": 74.7,
+    "entry": 49.5,
+    "sl": 47.05,
+    "tp1": 55.63,
+    "tp2": 60.53,
+    "tp3": 74.25,
     "stage": 0,
-    "date": "2026-08-17",
+    "date": "2026-08-19",
     "signal": "BUY"
   },
   "OAL": {
@@ -720,23 +720,53 @@
     "signal": "BUY"
   },
   "ARAMIT": {
-    "entry": 222.1,
+    "entry": 231.5,
     "sl": 213.21,
-    "tp1": 244.31,
-    "tp2": 266.52,
-    "tp3": 333.15,
+    "tp1": 268.08,
+    "tp2": 304.66,
+    "tp3": 347.25,
     "stage": 0,
-    "date": "2026-08-18",
+    "date": "2026-08-19",
     "signal": "BREAKOUT"
   },
   "ENVOYTEX": {
-    "entry": 63.9,
+    "entry": 65.3,
     "sl": 59.66,
-    "tp1": 72.38,
-    "tp2": 80.86,
-    "tp3": 95.85,
+    "tp1": 76.58,
+    "tp2": 87.86,
+    "tp3": 99.14,
     "stage": 0,
-    "date": "2026-08-18",
+    "date": "2026-08-19",
+    "signal": "BREAKOUT"
+  },
+  "GLOBALINS": {
+    "entry": 47.5,
+    "sl": 44.69,
+    "tp1": 54.53,
+    "tp2": 60.15,
+    "tp3": 71.25,
+    "stage": 0,
+    "date": "2026-08-19",
+    "signal": "STRONG BUY"
+  },
+  "PTL": {
+    "entry": 67.1,
+    "sl": 62.17,
+    "tp1": 76.96,
+    "tp2": 86.82,
+    "tp3": 100.65,
+    "stage": 0,
+    "date": "2026-08-19",
+    "signal": "BREAKOUT"
+  },
+  "KTL": {
+    "entry": 12.3,
+    "sl": 11.19,
+    "tp1": 14.52,
+    "tp2": 16.74,
+    "tp3": 18.96,
+    "stage": 0,
+    "date": "2026-08-19",
     "signal": "BREAKOUT"
   }
 }
