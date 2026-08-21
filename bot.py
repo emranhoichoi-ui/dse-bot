@@ -498,6 +498,58 @@ def fmt_triple(results):
         lines.append(f"    TP1:{r['tp1']} (+{tp1p}%) | TP2:{r['tp2']} (+{tp2p}%) | TP3:{r['tp3']} (+{tp3p}%)\n")
     return "\n".join(lines)
 
+# ══ HIGH-VOLATILITY WATCHLIST (research-validated, 2026-08) ══
+# Ei 20ta stock backtest e prottek bochor (14 bochorer modhdhe 65%+
+# bochore) kompokkhe 50% move korechilo - market-cycle-independent
+# structural volatility (choto float/retail-driven mone hoy). Etader
+# modhdhei RSI 50-level cross + volume spike (>=2x) trigger 90-diner
+# fwd return e win=54.3%/avg=+12.2% dekhiyeche (median +2.7% - kichu
+# boro winner-i beshirvag gawro tene tolche, tai ei signal-ke
+# "prottek trade-e boro labh" na, "kisu boro win + onek chotto/flat"
+# hisebe dekha uchit).
+HIGH_VOLATILITY_WATCHLIST = ["HAMI","MIRACLEIND","SINOBANGLA","SIMTEX","HAKKANIPUL",
+    "SHYAMPSUG","JUTESPINN","AZIZPIPES","GEMINISEA","IPDC","DULAMIACOT","AL-HAJTEX",
+    "FINEFOODS","SONALIANSH","SAVAREFR","EMERALDOIL","QUASEMIND","INTRACO","SHURWID","TOSRIFA"]
+
+def scan_volatile_watchlist(stocks):
+    results=[]
+    stock_map={s['symbol']:s for s in stocks}
+    for sym in HIGH_VOLATILITY_WATCHLIST:
+        s=stock_map.get(sym)
+        if not s:continue
+        ind=get_ind(sym)
+        if not ind.get('ok'):continue
+        if not(ind.get('rsi_cross50') and ind.get('vol_ratio',0)>=2):continue
+
+        ltp=s['ltp']
+        sh_level=ind.get('pre_breakout_high',0)
+        rsw=ind.get('recent_swing_low')
+        if sh_level and sh_level>0 and sh_level<ltp:sl_raw=sh_level*0.97
+        elif rsw and rsw>0 and rsw<ltp:sl_raw=rsw*0.99
+        else:sl_raw=ltp*0.85  # ei stock gulo volatile - wider default risk
+        sl=round(max(sl_raw,ltp*0.75),2)  # 25% max-risk cap (normal 20%-er cheye beshi, volatile stock bole)
+        risk=ltp-sl
+        if risk<=0:risk=ltp*0.08
+        tp1=round(max(ltp*1.10,ltp+risk*2),2)
+        tp2=round(max(ltp*1.25,ltp+risk*4),2)
+
+        results.append({'symbol':sym,'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,
+                         'rsi':ind['rsi'],'vol_ratio':ind['vol_ratio']})
+    return results
+
+def fmt_volatile(results):
+    if not results:return ""
+    lines=["\n\n🎢 HIGH-VOLATILITY WATCHLIST -- "+f"{len(results)} ti"]
+    lines.append("(20ta research-validated volatile stock-e RSI 50 cross + Vol 2x+ trigger)")
+    lines.append("(Sadharon signal na - choto/ghono-ghono win + majhemajhe boro win, boro loss-o hote pare)\n")
+    for r in results:
+        tp1p=round((r['tp1']-r['entry'])/r['entry']*100,1)
+        tp2p=round((r['tp2']-r['entry'])/r['entry']*100,1)
+        lines.append(f">>> {r['symbol']} | RSI:{r['rsi']} | Vol:{r['vol_ratio']}x")
+        lines.append(f"    Entry:{r['entry']} | SL:{r['sl']}")
+        lines.append(f"    TP1:{r['tp1']} (+{tp1p}%) | TP2:{r['tp2']} (+{tp2p}%)\n")
+    return "\n".join(lines)
+
 # ══════════════════════
 #  FULL INDICATORS
 # ══════════════════════
@@ -514,6 +566,7 @@ def get_ind(symbol):
                'recent_swing_low':None,'pre_breakout_high':0,
                'near_resistance':False,'rsi_ma50_cross':False,
                'long_term_warning':0,'long_term_warning_pct':0,
+               'rsi_cross50':False,
                'trend_ok':True}  # trend_ok = allow signal
 
     closes=data['closes'];highs=data['highs']
@@ -521,6 +574,13 @@ def get_ind(symbol):
 
     r=rsi(closes)
     rsi_ma50_cross=rsi_ma50_cross_bullish(closes)
+    # RSI fixed-level-50 cross (alada, rsi_ma50_cross theke bhinno - eta
+    # RSI nijer 50-MA na, shudhu 50 fixed level cross kora dhore).
+    # High-Volatility Watchlist feature-er jonno (research e validated).
+    rs_series=rsi_series(closes)
+    rsi_cross50=False
+    if len(rs_series)>=2 and rs_series[-1] is not None and rs_series[-2] is not None:
+        rsi_cross50 = rs_series[-1]>50 and rs_series[-2]<=50
     ml,sl_,mh=macd(closes)
     bbu,bbm,bbl=bb(closes)
     ma20=sma(closes,20);ma50=sma(closes,min(50,len(closes)))
@@ -781,6 +841,7 @@ def get_ind(symbol):
         'recent_swing_low':rsw,'pre_breakout_high':pre_breakout_high,
         'near_resistance':near_resistance,'rsi_ma50_cross':rsi_ma50_cross,
         'long_term_warning':long_term_warning,'long_term_warning_pct':long_term_warning_pct,
+        'rsi_cross50':rsi_cross50,
     }
 
 # ══════════════════════
@@ -1659,6 +1720,22 @@ async def send_signals(bot):
             save_open_signals(open_sigs,sha)
         except Exception as e:
             log.error(f"Sell-signal tracking error: {e}")
+
+        # High-Volatility Watchlist - protidin chalabo (Triple-Confirmation-er
+        # moto Thursday-only na), karon RSI-cross+volume trigger je-kono
+        # trading din-e ashte pare
+        try:
+            volatile=scan_volatile_watchlist(stocks)
+            msg+=fmt_volatile(volatile)
+            if volatile:
+                open_sigs3,sha3=get_open_signals()
+                for v in volatile:
+                    open_sigs3[v['symbol']]={'entry':v['entry'],'sl':v['sl'],
+                        'tp1':v['tp1'],'tp2':v['tp2'],'tp3':round(v['tp2']*1.2,2),
+                        'stage':0,'date':today,'signal':'HIGH-VOLATILITY'}
+                save_open_signals(open_sigs3,sha3)
+        except Exception as e:
+            log.error(f"Volatile-watchlist scan error: {e}")
 
         # Bristhoshpotibar (Thursday) e shoptaher shesh trading din - weekly
         # candle close hoy tokhon, tai Triple-Confirmation scanner shudhu ei
