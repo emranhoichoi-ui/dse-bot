@@ -483,6 +483,87 @@ def scan_triple_confirmation(stocks):
                          'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3})
     return results
 
+def scan_weekly_rsi_ma50(stocks):
+    """Weekly-timeframe scanner - Triple-Confirmation-er moto shudhu Thursday
+    (weekly candle close hoyar por) e chalate hobe, noile mid-week e repaint
+    hoye jabe (ei shoptaher "close" pratidin e bodlay).
+    Backtested (13yr DSE history, n=4327): weekly RSI(14, Wilder) tar nijer
+    50-week SMA-ke upward cross kore, EBONG RSI ar RSI-MA50 duitai 50-er
+    upore - win=45.7% (12wk) / avg=+4.5% vs baseline +2.7%, big_loss মাত্র
+    7.4% (baseline ~10%+). Extra filter (weekly MA10>MA20+Price>MA10, ba
+    Volume Oscillator) test kore dekha geche - kono ta e improvement dey na,
+    tai eta e minimal/clean version rakha holo."""
+    results=[]
+    ltp_map={s['symbol']:s.get('ltp',0) for s in stocks}
+    for s in stocks:
+        sym=s['symbol']
+        data=get_hist(sym)
+        if not data or len(data['closes'])<500:continue
+        wcloses,whighs=resample_weekly(data['dates'],data['closes'],data['highs'])
+        if len(wcloses)<70:continue
+
+        wrsi=rsi_series(wcloses,14)
+        valid_idx=[i for i,v in enumerate(wrsi) if v is not None]
+        if len(valid_idx)<52:continue
+        vals=[wrsi[i] for i in valid_idx]
+        wrsi_ma50=sma_series(vals,50)
+
+        cur=vals[-1];cur_ma=wrsi_ma50[-1]
+        prev=vals[-2];prev_ma=wrsi_ma50[-2]
+        if None in(cur_ma,prev_ma):continue
+
+        cross_up = cur>cur_ma and prev<=prev_ma
+        both_above_50 = cur>50 and cur_ma>50
+        if not(cross_up and both_above_50):continue
+
+        ind=get_ind(sym)
+        ltp=ltp_map.get(sym,wcloses[-1])
+        sh_level=ind.get('pre_breakout_high',0) if ind.get('ok') else 0
+        rsw=ind.get('recent_swing_low') if ind.get('ok') else None
+        if sh_level and sh_level>0 and sh_level<ltp:
+            sl_raw=sh_level*0.97
+        elif rsw and rsw>0 and rsw<ltp:
+            sl_raw=rsw*0.99
+        else:
+            sl_raw=ltp*0.93
+        sl=round(max(sl_raw,ltp*0.80),2)
+        risk=ltp-sl
+        if risk<=0:risk=ltp*0.05
+
+        tp1_mech=max(ltp*(1+TP1_MIN),ltp+risk*2)
+        tp2_mech=max(ltp*(1+TP2_MIN),ltp+risk*4)
+        tp3_mech=max(ltp*1.50,ltp+risk*6)
+        r1=ind.get('nearest_r1',0) or 0
+        r2=ind.get('nearest_r2',0) or 0
+        r3=ind.get('nearest_r3',0) or 0
+        min_r1=ltp*(1+TP1_MIN);min_r2=ltp*(1+TP2_MIN);min_r3=ltp*1.35
+        tp1=round(r1*0.98,2) if min_r1<r1<tp1_mech else round(tp1_mech,2)
+        tp2_cap=r2 if r2>tp1 else 0
+        tp2=round(tp2_cap*0.98,2) if tp2_cap and min_r2<tp2_cap<tp2_mech else round(tp2_mech,2)
+        tp2=max(tp2,round(tp1*1.03,2))
+        tp3_cap=r3 if r3>tp2 else 0
+        tp3=round(tp3_cap*0.98,2) if tp3_cap and min_r3<tp3_cap<tp3_mech else round(tp3_mech,2)
+        tp3=max(tp3,round(tp2*1.03,2))
+
+        results.append({'symbol':sym,'ltp':ltp,'weekly_rsi':round(cur,1),
+                         'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3})
+    return results
+
+def fmt_weekly_rsi(results):
+    if not results:
+        return "\n\n📊 SAPTAHIK RSI x MA50 CROSS (eyi shoptahe)\nKono match paoa jayni ei shoptahe."
+    lines=["\n\n📊 SAPTAHIK RSI x MA50 CROSS -- "+f"{len(results)} ti (eyi shoptahe)",
+           "(Weekly RSI(14) nijer 50-week SMA cross korlo, duitai 50-er upore)",
+           "(Backtest e 45.7% win / +4.5% avg 12-week return, big_loss matro 7.4%)\n"]
+    for r in results[:15]:
+        tp1p=round((r['tp1']-r['entry'])/r['entry']*100,1)
+        tp2p=round((r['tp2']-r['entry'])/r['entry']*100,1)
+        tp3p=round((r['tp3']-r['entry'])/r['entry']*100,1)
+        lines.append(f">>> {r['symbol']} | Weekly RSI: {r['weekly_rsi']} | LTP: {r['ltp']}")
+        lines.append(f"    Entry:{r['entry']} | SL:{r['sl']}")
+        lines.append(f"    TP1:{r['tp1']} (+{tp1p}%) | TP2:{r['tp2']} (+{tp2p}%) | TP3:{r['tp3']} (+{tp3p}%)\n")
+    return "\n".join(lines)
+
 def fmt_triple(results):
     if not results:
         return "\n\n📅 SAPTAHIK TRIPLE-CONFIRMATION (eyi shoptahe)\nKono match paoa jayni ei shoptahe."
@@ -1753,6 +1834,19 @@ async def send_signals(bot):
                     save_open_signals(open_sigs2,sha2)
             except Exception as e:
                 log.error(f"Triple-confirmation scan error: {e}")
+
+            try:
+                wrsi_matches=scan_weekly_rsi_ma50(stocks)
+                msg+=fmt_weekly_rsi(wrsi_matches)
+                if wrsi_matches:
+                    open_sigs3,sha3=get_open_signals()
+                    for t in wrsi_matches:
+                        open_sigs3[t['symbol']]={'entry':t['entry'],'sl':t['sl'],
+                            'tp1':t['tp1'],'tp2':t['tp2'],'tp3':t['tp3'],
+                            'stage':0,'date':today,'signal':'WEEKLY-RSI-MA50'}
+                    save_open_signals(open_sigs3,sha3)
+            except Exception as e:
+                log.error(f"Weekly RSI-MA50 scan error: {e}")
 
         for i in range(0,len(msg),4000):
             await bot.send_message(chat_id=CHAT_ID,text=msg[i:i+4000])
