@@ -497,7 +497,7 @@ def scan_weekly_rsi_ma50(stocks):
     ltp_map={s['symbol']:s.get('ltp',0) for s in stocks}
     for s in stocks:
         sym=s['symbol']
-        if sym in INSURANCE_SECTOR:continue  # ei sector e RSI relationship ULTO (dekho scan_insurance_rsi)
+        if sym in INSURANCE_SECTOR or sym in CEMENT_SECTOR:continue  # ei sector gulo e RSI relationship ULTO
         data=get_hist(sym)
         if not data or len(data['closes'])<500:continue
         wcloses,whighs=resample_weekly(data['dates'],data['closes'],data['highs'])
@@ -671,6 +671,81 @@ def fmt_insurance(results):
     lines=["\n\n🛡️ INSURANCE SECTOR RSI SIGNAL -- "+f"{len(results)} ti",
            "(RSI(14) nijer 50-diner MA cross korlo 25-45 zone e - ei sector e",
            " kom RSI e bhalo fol, high RSI e na - baki market theke ULTO)"]
+    for r in results[:10]:
+        tp1p=round((r['tp1']-r['entry'])/r['entry']*100,1)
+        tp2p=round((r['tp2']-r['entry'])/r['entry']*100,1)
+        tp3p=round((r['tp3']-r['entry'])/r['entry']*100,1)
+        lines.append(f"\n>>> {r['symbol']} | RSI:{r['rsi']} | Entry:{r['entry']}")
+        lines.append(f"    SL:{r['sl']} | TP1:{r['tp1']} (+{tp1p}%) | TP2:{r['tp2']} (+{tp2p}%) | TP3:{r['tp3']} (+{tp3p}%)")
+    return "\n".join(lines)
+
+# Cement sector - ekhoi RSI-inversion pattern insurance er moto (backtest:
+# 13yr, n=285, RSI 25-45 zone cross e win=50.5%/avg=+5.4%, kintu market-wide
+# style >50 zone e win=34.5%/avg=-0.4% - NEGATIVE, active-vabe khatikor).
+CEMENT_SECTOR = ["PREMIERCEM","MEGHNACEM","LHB","HEIDELBCEM","CROWNCEMNT","CONFIDCEM","ARAMITCEM"]
+
+def scan_cement_rsi(stocks):
+    """Daily-timeframe, tai repainting shomossha nei. Backtest: RSI(14,Wilder)
+    x nijer 50-day SMA upward cross, RSI 25-45 zone e, entry price>=3.
+    n=285, win=50.5%, avg=+5.4% (baseline +2.7% er dwiguner beshi)."""
+    results=[]
+    ltp_map={s['symbol']:s.get('ltp',0) for s in stocks}
+    for s in stocks:
+        sym=s['symbol']
+        if sym not in CEMENT_SECTOR:continue
+        data=get_hist(sym)
+        if not data or len(data['closes'])<200:continue
+        closes=data['closes']
+        ltp=ltp_map.get(sym,closes[-1])
+        if ltp<3:continue
+
+        rs=rsi_series(closes,14)
+        valid_idx=[i for i,v in enumerate(rs) if v is not None]
+        if len(valid_idx)<51:continue
+        vals=[rs[i] for i in valid_idx]
+        rs_ma=sma_series(vals,50)
+        cur=vals[-1];cur_ma=rs_ma[-1]
+        prev=vals[-2];prev_ma=rs_ma[-2]
+        if None in(cur_ma,prev_ma):continue
+        cross_up = cur>cur_ma and prev<=prev_ma
+        in_zone = 25<=cur<45
+        if not(cross_up and in_zone):continue
+
+        ind=get_ind(sym)
+        sh_level=ind.get('pre_breakout_high',0) if ind.get('ok') else 0
+        rsw=ind.get('recent_swing_low') if ind.get('ok') else None
+        if sh_level and sh_level>0 and sh_level<ltp:
+            sl_raw=sh_level*0.97
+        elif rsw and rsw>0 and rsw<ltp:
+            sl_raw=rsw*0.99
+        else:
+            sl_raw=ltp*0.93
+        sl=round(max(sl_raw,ltp*0.80),2)
+        risk=ltp-sl
+        if risk<=0:risk=ltp*0.05
+        tp1_mech=max(ltp*(1+TP1_MIN),ltp+risk*2)
+        tp2_mech=max(ltp*(1+TP2_MIN),ltp+risk*4)
+        tp3_mech=max(ltp*1.50,ltp+risk*6)
+        r1=ind.get('nearest_r1',0) or 0
+        r2=ind.get('nearest_r2',0) or 0
+        r3=ind.get('nearest_r3',0) or 0
+        min_r1=ltp*(1+TP1_MIN);min_r2=ltp*(1+TP2_MIN);min_r3=ltp*1.35
+        tp1=round(r1*0.98,2) if min_r1<r1<tp1_mech else round(tp1_mech,2)
+        tp2_cap=r2 if r2>tp1 else 0
+        tp2=round(tp2_cap*0.98,2) if tp2_cap and min_r2<tp2_cap<tp2_mech else round(tp2_mech,2)
+        tp2=max(tp2,round(tp1*1.03,2))
+        tp3_cap=r3 if r3>tp2 else 0
+        tp3=round(tp3_cap*0.98,2) if tp3_cap and min_r3<tp3_cap<tp3_mech else round(tp3_mech,2)
+        tp3=max(tp3,round(tp2*1.03,2))
+
+        results.append({'symbol':sym,'rsi':round(cur,1),'entry':ltp,'sl':sl,'tp1':tp1,'tp2':tp2,'tp3':tp3})
+    return results
+
+def fmt_cement(results):
+    if not results:return ""
+    lines=["\n\n🏗️ CEMENT SECTOR RSI SIGNAL -- "+f"{len(results)} ti",
+           "(RSI(14) nijer 50-diner MA cross korlo 25-45 zone e - ei sector e",
+           " kom RSI e bhalo fol, high RSI e negative - baki market theke ULTO)"]
     for r in results[:10]:
         tp1p=round((r['tp1']-r['entry'])/r['entry']*100,1)
         tp2p=round((r['tp2']-r['entry'])/r['entry']*100,1)
@@ -1919,6 +1994,19 @@ async def send_signals(bot):
                 save_open_signals(open_sigs4,sha4)
         except Exception as e:
             log.error(f"Insurance-RSI scan error: {e}")
+
+        try:
+            cem_matches=scan_cement_rsi(stocks)
+            msg+=fmt_cement(cem_matches)
+            if cem_matches:
+                open_sigs5,sha5=get_open_signals()
+                for m in cem_matches:
+                    open_sigs5[m['symbol']]={'entry':m['entry'],'sl':m['sl'],
+                        'tp1':m['tp1'],'tp2':m['tp2'],'tp3':m['tp3'],
+                        'stage':0,'date':today,'signal':'CEMENT-RSI'}
+                save_open_signals(open_sigs5,sha5)
+        except Exception as e:
+            log.error(f"Cement-RSI scan error: {e}")
 
         # Bristhoshpotibar (Thursday) e shoptaher shesh trading din - weekly
         # candle close hoy tokhon, tai Triple-Confirmation scanner shudhu ei
