@@ -754,6 +754,78 @@ def fmt_cement(results):
         lines.append(f"    SL:{r['sl']} | TP1:{r['tp1']} (+{tp1p}%) | TP2:{r['tp2']} (+{tp2p}%) | TP3:{r['tp3']} (+{tp3p}%)")
     return "\n".join(lines)
 
+# ══════════════════════
+#  INSURANCE LONG-TERM ACCUMULATION ALERT
+# ══════════════════════
+# Backtest (13yr, insurance sector): RSI<30 (deep oversold) entry + 1
+# bochor hold e win=47.4%, avg=+18.1% (baseline elomelo entry: avg=+11.4%).
+# Eta short-term swing signal na (open_signals.json SL/TP tracking-e
+# fit kore na) - tai alada lightweight cooldown-tracking file use kore,
+# jate ekbar alert deyar por 50-din porjonto shei stock-e abar spam na hoy.
+ACCUM_COOLDOWN_URL=f"{GITHUB_API}/insurance_accum_cooldown.json"
+
+def get_accum_cooldown():
+    try:
+        gh={'Authorization':f'token {GITHUB_TOKEN}','Accept':'application/vnd.github.v3+json'}
+        r=requests.get(ACCUM_COOLDOWN_URL,headers=gh,timeout=15)
+        if r.status_code==404:return {},None
+        if r.status_code!=200:return {},None
+        info=r.json()
+        import base64,json as jsonlib
+        content=base64.b64decode(info['content']).decode('utf-8')
+        return jsonlib.loads(content),info['sha']
+    except Exception as e:
+        log.error(f"get_accum_cooldown: {e}")
+        return {},None
+
+def save_accum_cooldown(data,sha):
+    try:
+        gh={'Authorization':f'token {GITHUB_TOKEN}','Accept':'application/vnd.github.v3+json'}
+        import base64,json as jsonlib
+        enc=base64.b64encode(jsonlib.dumps(data,indent=2).encode()).decode()
+        payload={'message':f"Update insurance_accum_cooldown {datetime.now(BD_TZ).strftime('%Y-%m-%d')}",'content':enc}
+        if sha:payload['sha']=sha
+        requests.put(ACCUM_COOLDOWN_URL,headers=gh,json=payload,timeout=20)
+    except Exception as e:
+        log.error(f"save_accum_cooldown: {e}")
+
+def scan_insurance_accumulation(stocks,cooldown,today_str):
+    """RSI<30 + 50-diner cooldown (already alert deya hole abar dey na).
+    Returns list of {'symbol','rsi','ltp'} - kono SL/TP nei, eta
+    long-term accumulation alert, short-term trade signal na."""
+    results=[]
+    ltp_map={s['symbol']:s.get('ltp',0) for s in stocks}
+    today_dt=datetime.strptime(today_str,'%Y-%m-%d')
+    for s in stocks:
+        sym=s['symbol']
+        if sym not in INSURANCE_SECTOR:continue
+        data=get_hist(sym)
+        if not data or len(data['closes'])<200:continue
+        closes=data['closes']
+        ltp=ltp_map.get(sym,closes[-1])
+        if ltp<3:continue
+        r=rsi(closes)
+        if r>=30:continue
+        last_alert=cooldown.get(sym)
+        if last_alert:
+            try:
+                days_since=(today_dt-datetime.strptime(last_alert,'%Y-%m-%d')).days
+                if days_since<50:continue
+            except:pass
+        results.append({'symbol':sym,'rsi':r,'ltp':ltp})
+        cooldown[sym]=today_str
+    return results,cooldown
+
+def fmt_accumulation(results):
+    if not results:return ""
+    lines=["\n\n🐢 INSURANCE LONG-TERM ACCUMULATION -- "+f"{len(results)} ti",
+           "(RSI<30, deep oversold - short-term trade na, 1+ bochor",
+           " dhore rakhar jonno accumulation zone. Backtest: 1yr hold e",
+           " avg +18.1% vs elomelo entry er +11.4%. SL/TP prashongik na)"]
+    for r in results[:10]:
+        lines.append(f"\n>>> {r['symbol']} | RSI:{r['rsi']} | Daam:{r['ltp']}")
+    return "\n".join(lines)
+
 def scan_volatile_watchlist(stocks):
     results=[]
     stock_map={s['symbol']:s for s in stocks}
@@ -2007,6 +2079,15 @@ async def send_signals(bot):
                 save_open_signals(open_sigs5,sha5)
         except Exception as e:
             log.error(f"Cement-RSI scan error: {e}")
+
+        try:
+            accum_cooldown,accum_sha=get_accum_cooldown()
+            accum_matches,accum_cooldown=scan_insurance_accumulation(stocks,accum_cooldown,today)
+            msg+=fmt_accumulation(accum_matches)
+            if accum_matches:
+                save_accum_cooldown(accum_cooldown,accum_sha)
+        except Exception as e:
+            log.error(f"Insurance-accumulation scan error: {e}")
 
         # Bristhoshpotibar (Thursday) e shoptaher shesh trading din - weekly
         # candle close hoy tokhon, tai Triple-Confirmation scanner shudhu ei
