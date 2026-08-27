@@ -120,8 +120,9 @@ def main():
     # pare - eta dhorar jonno real check kori.
     today=datetime.now().strftime('%Y-%m-%d')
     trading=is_dse_trading_day(today)
-    if trading is False:
-        print(f"Aj ({today}) DSE chhuti (holiday) - update skip kora holo")
+    if trading is not True:
+        reason="DSE chhuti (holiday)" if trading is False else "check failed/uncertain - shafe thakar jonno skip"
+        print(f"Aj ({today}) {reason} - update skip kora holo")
         return
 
     stocks=fetch_today()
