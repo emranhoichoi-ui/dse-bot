@@ -14,16 +14,37 @@ DATA_DIR='data'
 def is_dse_trading_day(date_str):
     """Shudhu Fri/Sat na, Eid/Puja/sorkari chhutir din-o (jegulo Sun-Thu
     er modhdhe porte pare) dhorte dsebd.org er day_end_archive.php
-    directly check kori - shei din shotti trade hoyeche kina."""
+    directly check kori - shei din shotti trade hoyeche kina.
+
+    NOTE: age eta shudhu ?endDate=... diye query hoto (single-date-only
+    form), kintu oi form dsebd.org theke আসল archive table dey na -
+    ekta live ticker-strip page dey jeta unreliable vabe pass/fail
+    dite pare. bot.py te age eta fix kora hoyechilo
+    (?startDate=X&endDate=X range form byabohar kore, same date dutoy)
+    kintu ei script (update_data.py, GitHub Actions e alada vabe chole)
+    ke miss kora hoyechilo - fole 2026-08-27 (shotti trading day) e
+    o eta walo update skip kore fele, karon single-endDate form
+    incorrectly "no data table" dekhiyechilo. Ekhon bot.py-r shathe
+    consistent range-query form byabohar kora hocche."""
     try:
-        url=f"https://www.dsebd.org/day_end_archive.php?endDate={date_str}&archive=data"
+        url=f"https://www.dsebd.org/day_end_archive.php?startDate={date_str}&endDate={date_str}&archive=data"
         r=requests.get(url,headers=HEADERS,timeout=15,verify=False)
+        print(f"TradingDayCheck({date_str}): HTTP {r.status_code}, response length {len(r.text)}")
         if r.status_code!=200:return None
         soup=BeautifulSoup(r.text,'html.parser')
-        for t in soup.find_all('table'):
-            if len(t.find_all('tr'))>1:return True
+        tables=soup.find_all('table')
+        print(f"TradingDayCheck({date_str}): {len(tables)} tables found")
+        for t in tables:
+            rows=t.find_all('tr')
+            if len(rows)<2:continue
+            header_txt=' '.join(c.get_text(strip=True).upper() for c in rows[0].find_all(['th','td']))
+            if 'TRADING CODE' in header_txt or 'LTP' in header_txt:
+                print(f"TradingDayCheck({date_str}): real archive table found ({len(rows)} rows) -> trading day")
+                return True
+        print(f"TradingDayCheck({date_str}): no real data table -> treating as non-trading day")
         return False
-    except Exception:
+    except Exception as e:
+        print(f"TradingDayCheck error: {e}")
         return None
 
 def fetch_today():
