@@ -1734,7 +1734,71 @@ def fmt_sig(s):
     lines.append("")
     return "\n".join(lines)
 
-def build_msg(scored,breakouts,dsex):
+CUSTOM_INDEX_URL=f"{GITHUB_API}/custom_index.json"
+
+def get_custom_index_history():
+    try:
+        gh={'Authorization':f'token {GITHUB_TOKEN}','Accept':'application/vnd.github.v3+json'}
+        r=requests.get(CUSTOM_INDEX_URL,headers=gh,timeout=15)
+        if r.status_code==404:return {},None
+        if r.status_code!=200:return {},None
+        info=r.json()
+        import base64,json as jsonlib
+        content=base64.b64decode(info['content']).decode('utf-8')
+        return jsonlib.loads(content),info['sha']
+    except Exception as e:
+        log.error(f"get_custom_index_history: {e}")
+        return {},None
+
+def save_custom_index_history(data,sha):
+    try:
+        gh={'Authorization':f'token {GITHUB_TOKEN}','Accept':'application/vnd.github.v3+json'}
+        import base64,json as jsonlib
+        # 400 diner beshi purono entry rekhe lav nei, file choto rakhi
+        dates=sorted(data.keys())
+        if len(dates)>400:
+            for d in dates[:-400]:del data[d]
+        enc=base64.b64encode(jsonlib.dumps(data,indent=2).encode()).decode()
+        payload={'message':f"Update custom_index {datetime.now(BD_TZ).strftime('%Y-%m-%d')}",'content':enc}
+        if sha:payload['sha']=sha
+        requests.put(CUSTOM_INDEX_URL,headers=gh,json=payload,timeout=20)
+    except Exception as e:
+        log.error(f"save_custom_index_history: {e}")
+
+def compute_custom_index(stocks,today_str):
+    """dsebd.org er nijer DSEX scraping majhe majhe stale/unreliable
+    (age ei session e dhora poreche - "DSEX: N/A" ba purono date-e
+    atke thaka). Tai equal-weighted average daily % change diye
+    nijeder ekta simple, reliable custom index banano hoyeche -
+    protidin er scanned stock list theke direct hisheb hoy, kono
+    baire scraping lage na."""
+    history,sha=get_custom_index_history()
+    if not history:
+        base_val=1000.0
+        prev_val=base_val
+    else:
+        dates=sorted(history.keys())
+        prev_val=history[dates[-1]]
+
+    valid_changes=[s['change'] for s in stocks if s.get('change') is not None]
+    if not valid_changes:
+        return None,None,None
+
+    avg_change=sum(valid_changes)/len(valid_changes)
+    today_val=round(prev_val*(1+avg_change/100),2)
+    history[today_str]=today_val
+    save_custom_index_history(history,sha)
+
+    # 5-diner age-r value pele weekly change o dekhai
+    dates=sorted(history.keys())
+    week_change=None
+    if len(dates)>=6:
+        five_ago_val=history[dates[-6]]
+        week_change=round((today_val-five_ago_val)/five_ago_val*100,2)
+
+    return today_val,round(avg_change,2),week_change
+
+def build_msg(scored,breakouts,dsex,custom_idx=None,custom_chg=None,custom_wk=None):
     now=datetime.now(BD_TZ).strftime("%d %b %Y %I:%M %p")
     stats=get_stats()
     buys=[s for s in scored if 'BUY' in s['signal']]
@@ -1749,6 +1813,10 @@ def build_msg(scored,breakouts,dsex):
     parts.append("DSE Signal Bot v4.2")
     parts.append(f"Tarikh : {now}")
     parts.append(f"DSEX   : {dsex}")
+    if custom_idx is not None:
+        chg_str=f"({custom_chg:+.2f}%)" if custom_chg is not None else ""
+        wk_str=f"  Weekly:{custom_wk:+.2f}%" if custom_wk is not None else ""
+        parts.append(f"Custom Index: {custom_idx} {chg_str}{wk_str}")
     parts.append(f"Win Rate: {stats['wr']}% ({stats['wins']}W/{stats['losses']}L/{stats['pending']}P)")
     parts.append(SEP)
     parts.append("Kemon kaj korche:")
@@ -1991,10 +2059,15 @@ async def send_signals(bot):
             await bot.send_message(chat_id=CHAT_ID,text="Data nei. DSE bondho ba trading hour shesh.")
             return
         dsex=get_dsex()
+        try:
+            custom_idx,custom_chg,custom_wk=compute_custom_index(stocks,today)
+        except Exception as e:
+            log.error(f"Custom index error: {e}")
+            custom_idx,custom_chg,custom_wk=None,None,None
         global _cache;_cache={}
         breakouts=scan_breakouts(stocks)
         scored=analyze(stocks,use_hist=True)
-        msg=build_msg(scored,breakouts,dsex)
+        msg=build_msg(scored,breakouts,dsex,custom_idx,custom_chg,custom_wk)
 
         # ══ SELL SIGNAL TRACKING ══
         # Notun BUY/STRONG BUY/BREAKOUT signal ashle SOBSOMOY entry/SL/TP
