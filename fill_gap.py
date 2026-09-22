@@ -7,6 +7,41 @@ import os,csv,requests,time
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from bs4 import BeautifulSoup
+
+# ── dsebd.org SSL compat ──
+# 2026-09-22 theke GitHub Actions runner e dsebd.org-er sathe
+# "SSLV3_ALERT_HANDSHAKE_FAILURE" ashche (21 Sep porjonto thik chilo) -
+# server-er TLS/cipher config probably bodleche, notun OpenSSL-er
+# default security level e negotiate hocche na. Prothome normal request
+# kori; SSLError hole legacy-compatible SSL context diye abar try kori.
+import ssl as _ssl
+from requests.adapters import HTTPAdapter as _HTTPAdapter
+
+class _LegacySSLAdapter(_HTTPAdapter):
+    def init_poolmanager(self,*args,**kwargs):
+        ctx=_ssl.create_default_context()
+        ctx.check_hostname=False
+        ctx.verify_mode=_ssl.CERT_NONE
+        try:ctx.set_ciphers('DEFAULT@SECLEVEL=0')
+        except Exception:pass
+        ctx.options|=getattr(_ssl,'OP_LEGACY_SERVER_CONNECT',0x4)
+        try:ctx.minimum_version=_ssl.TLSVersion.TLSv1
+        except Exception:pass
+        kwargs['ssl_context']=ctx
+        return super().init_poolmanager(*args,**kwargs)
+
+_legacy_session=None
+def _dse_get(url,**kwargs):
+    global _legacy_session
+    try:
+        return requests.get(url,**kwargs)
+    except requests.exceptions.SSLError as e:
+        print(f"SSL error, legacy SSL context diye retry: {e.__class__.__name__}")
+        if _legacy_session is None:
+            _legacy_session=requests.Session()
+            _legacy_session.mount('https://',_LegacySSLAdapter())
+        kwargs.pop('verify',None)
+        return _legacy_session.get(url,verify=False,**kwargs)
 from datetime import datetime,timedelta
 
 HEADERS={
@@ -46,7 +81,7 @@ def fetch_all_stocks_for_date(date):
     url=f"https://www.dsebd.org/day_end_archive.php?endDate={date}&archive=data"
     capture=not _DEBUG_CAPTURED[0]
     try:
-        r=requests.get(url,headers=HEADERS,timeout=20,verify=False)
+        r=_dse_get(url,headers=HEADERS,timeout=20,verify=False)
         if capture:
             dbg(f"=== DEBUG for {date} ===")
             dbg(f"URL: {url}")
