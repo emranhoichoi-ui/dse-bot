@@ -114,7 +114,12 @@ def fetch_today():
             with open(f"{DATA_DIR}/_debug_newsite.txt","w") as _f:
                 _f.write(f"URL: {r.url}\nlen={len(r.text)} tr={r.text.count('<tr')} table={r.text.count('<table')}\n")
                 _f.write("api/json refs: "+" | ".join(sorted(set(_re.findall(r'["\'](/?[^"\'\s]*(?:api|json|ajax)[^"\'\s]*)["\']',r.text)))[:40])+"\n\n")
-                _f.write(r.text[:6000])
+                _t=r.text
+                for _kw in ['BRACBANK','BNICL','tradingCode','trading_code','ltp','closePrice','ycp']:
+                    _i=_t.find(_kw)
+                    _f.write(f"\n\n### '{_kw}' first at {_i}, count={_t.count(_kw)}\n")
+                    if _i>=0:_f.write(_t[max(0,_i-700):_i+900])
+                _f.write("\n\n### next-data api hints: "+" | ".join(sorted(set(_re.findall(r'(/api/[A-Za-z0-9_\-/]+)',_t)))[:60]))
         except Exception as _e:print(f"diag dump err {_e}")
         soup=BeautifulSoup(r.text,'html.parser')
         for row in soup.find_all('tr'):
