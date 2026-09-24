@@ -87,7 +87,9 @@ def fetch_today():
     # 2026-09-24 theke ..._by_value.php HTTP 404 dicche, kintu dsebd.org-er
     # onno latest-share-price page gulo (same table format) chalu ache -
     # tai ekta ekta kore try kori, prothom je ta 200 dey seta use kori.
-    urls=["https://www.dsebd.org/latest_share_price_scroll_by_value.php",
+    urls=["https://dsebd.org/markets/latest-share-price",
+          "https://www.dsebd.org/markets/latest-share-price",
+          "https://www.dsebd.org/latest_share_price_scroll_by_value.php",
           "https://www.dsebd.org/latest_share_price_scroll_by_ltp.php",
           "https://www.dsebd.org/latest_share_price_scroll_by_change.php",
           "https://www.dsebd.org/latest_share_price_scroll_l.php",
@@ -106,6 +108,14 @@ def fetch_today():
                 print(f"  try {url.split('/')[-1]}: {ee.__class__.__name__}")
         if r is None:
             raise Exception("kono latest-share-price page-i 200 dey ni")
+        # notun site structure bojhar jonno diagnostic dump
+        try:
+            import re as _re
+            with open(f"{DATA_DIR}/_debug_newsite.txt","w") as _f:
+                _f.write(f"URL: {r.url}\nlen={len(r.text)} tr={r.text.count('<tr')} table={r.text.count('<table')}\n")
+                _f.write("api/json refs: "+" | ".join(sorted(set(_re.findall(r'["\'](/?[^"\'\s]*(?:api|json|ajax)[^"\'\s]*)["\']',r.text)))[:40])+"\n\n")
+                _f.write(r.text[:6000])
+        except Exception as _e:print(f"diag dump err {_e}")
         soup=BeautifulSoup(r.text,'html.parser')
         for row in soup.find_all('tr'):
             cols=row.find_all('td')
