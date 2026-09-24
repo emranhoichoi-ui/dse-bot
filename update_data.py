@@ -82,104 +82,41 @@ def is_dse_trading_day(date_str):
         print(f"TradingDayCheck error: {e}")
         return None
 
-def fetch_today():
-    """dsebd.org theke ajer sob stock er data ano"""
-    # 2026-09-24 theke ..._by_value.php HTTP 404 dicche, kintu dsebd.org-er
-    # onno latest-share-price page gulo (same table format) chalu ache -
-    # tai ekta ekta kore try kori, prothom je ta 200 dey seta use kori.
-    urls=["https://dsebd.org/markets/latest-share-price",
-          "https://www.dsebd.org/markets/latest-share-price",
-          "https://www.dsebd.org/latest_share_price_scroll_by_value.php",
-          "https://www.dsebd.org/latest_share_price_scroll_by_ltp.php",
-          "https://www.dsebd.org/latest_share_price_scroll_by_change.php",
-          "https://www.dsebd.org/latest_share_price_scroll_l.php",
-          "https://www.dsebd.org/latest_share_price_scroll_group.php"]
-    stocks={}
-    today=datetime.now().strftime('%Y-%m-%d')
+def fetch_live_api():
+    """dsebd.org 2026-09-24 e redesign hoyeche (Next.js). Notun site-er JSON
+    API theke data ani:
+      /api/live/market -> session.sessionDate (shesh trading din), tradingDay
+      /api/live/prices -> protita instrument:
+        [code, ltp, ycp, open, high, low, closep, volume, value_mn, trades,
+         pct_change, category, ..., sector, type]
+    (BNICL/BRACBANK diye market-movers er open/high/low er sathe mile
+    verify kora.) Ager HTML table-e OPEN chilo na, ekhon ashol Open pai.
+    Return (session_date, {sym: row}) ba (None, {}) fail hole."""
     try:
-        r=None
-        for url in urls:
+        m=_dse_get("https://dsebd.org/api/live/market",headers=HEADERS,timeout=30,verify=False).json()
+        sess=m.get('session',{}) or {}
+        session_date=sess.get('sessionDate')
+        print(f"Live market: sessionDate={session_date} tradingDay={sess.get('tradingDay')} phase={sess.get('phase')} tradeTime={m.get('totals',{}).get('tradeTime')}")
+        p=_dse_get("https://dsebd.org/api/live/prices",headers=HEADERS,timeout=30,verify=False).json()
+        rows=p if isinstance(p,list) else (p.get('rows') or p.get('data') or p.get('prices') or [])
+        stocks={}
+        for r in rows:
+            if not isinstance(r,list) or len(r)<8:continue
+            code=str(r[0]).strip().upper()
             try:
-                rr=_dse_get(url,headers=HEADERS,timeout=30,verify=False)
-                print(f"  try {url.split('/')[-1]}: HTTP {rr.status_code}")
-                if rr.status_code==200:
-                    r=rr;break
-            except Exception as ee:
-                print(f"  try {url.split('/')[-1]}: {ee.__class__.__name__}")
-        if r is None:
-            raise Exception("kono latest-share-price page-i 200 dey ni")
-        # notun site structure bojhar jonno diagnostic dump
-        try:
-            import re as _re
-            with open(f"{DATA_DIR}/_debug_newsite.txt","w") as _f:
-                _f.write(f"URL: {r.url}\nlen={len(r.text)} tr={r.text.count('<tr')} table={r.text.count('<table')}\n")
-                _f.write("api/json refs: "+" | ".join(sorted(set(_re.findall(r'["\'](/?[^"\'\s]*(?:api|json|ajax)[^"\'\s]*)["\']',r.text)))[:40])+"\n\n")
-                _t=r.text
-                for _kw in ['BRACBANK','BNICL','tradingCode','trading_code','ltp','closePrice','ycp']:
-                    _i=_t.find(_kw)
-                    _f.write(f"\n\n### '{_kw}' first at {_i}, count={_t.count(_kw)}\n")
-                    if _i>=0:_f.write(_t[max(0,_i-700):_i+900])
-                _f.write("\n\n### \\\"code\\\" occurrences: "+str(_t.count('\\"code\\":')))
-                # JS chunk gulo theke data API endpoint khuji
-                _chunks=sorted(set(_re.findall(r'/_next/static/chunks/[A-Za-z0-9_\-\.~]+\.js',_t)))
-                _f.write(f"\n\n### {len(_chunks)} JS chunks; endpoint candidates:\n")
-                _seen=set()
-                for _c in _chunks:
-                    try:
-                        _js=_dse_get("https://dsebd.org"+_c,headers=HEADERS,timeout=20,verify=False).text
-                    except Exception:continue
-                    for _m in _re.findall(r'["\'`](/?(?:api|v1|v2|graphql|market|markets|share|price|ltp)[A-Za-z0-9_\-/\.\?=&${}]*)["\'`]',_js):
-                        if _m not in _seen and 'media' not in _m:
-                            _seen.add(_m);_f.write(f"{_c.split('/')[-1]}: {_m}\n")
-                    for _m in _re.findall(r'https?://[A-Za-z0-9\.\-]+(?::\d+)?/[A-Za-z0-9_\-/\.]*',_js):
-                        if _m not in _seen and 'w3.org' not in _m and 'react' not in _m:
-                            _seen.add(_m);_f.write(f"{_c.split('/')[-1]}: URL {_m}\n")
-                _f.write("\n\n### next-data api hints: "+" | ".join(sorted(set(_re.findall(r'(/api/[A-Za-z0-9_\-/]+)',_t)))[:60]))
-        except Exception as _e:print(f"diag dump err {_e}")
-        soup=BeautifulSoup(r.text,'html.parser')
-        for row in soup.find_all('tr'):
-            cols=row.find_all('td')
-            if len(cols)<9:continue
-            cells=[c.get_text(strip=True) for c in cols]
-            sym=None;si=0
-            for i,cell in enumerate(cells[:4]):
-                cl=cell.replace('-','').replace('_','')
-                if cl.isalpha() and 2<=len(cell)<=12 and cell.upper() not in('SL','NO','SYMBOL','NAME','CODE','TRADE'):
-                    sym=cell.upper();si=i;break
-            if not sym:continue
-            try:
-                nums=[]
-                for c in cells[si+1:]:
-                    try:nums.append(float(c.replace(',','')))
-                    except:nums.append(0.0)
-                if len(nums)<5:continue
-                # dsebd latest-share-price table columns: LTP, HIGH, LOW,
-                # CLOSEP, YCP, CHANGE, TRADE, VALUE(mn), VOLUME - kono OPEN
-                # column nei. Age nums[1]/[2]/[3] ke Open/High/Low dhora hoto,
-                # fole store hocchilo Open=HIGH, High=LOW, Low=CLOSEP (last
-                # 20 diner 81% row-e High<Low ba Close range-er baire chilo).
-                ltp=nums[0]
-                hi=nums[1] if len(nums)>1 and nums[1]>0 else ltp
-                lo=nums[2] if len(nums)>2 and nums[2]>0 else ltp
-                closep=nums[3] if len(nums)>3 and nums[3]>0 else ltp
-                ycp=nums[4] if len(nums)>4 and nums[4]>0 else closep
-                op=ycp  # Open column nei - ager diner close-ke approximation hishebe
-                ltp=closep  # din sheshe official close price
-                vol=0
-                for n in nums[6:]:
-                    if 100<=n<=999999999 and n>vol:vol=n
-                if ltp>0:
-                    stocks[sym]={
-                        'Date':today,'Open':round(op,2),
-                        'High':round(hi,2),'Low':round(lo,2),
-                        'Close':round(ltp,2),'Volume':int(vol)
-                    }
-            except:continue
-        print(f"Fetched {len(stocks)} stocks for {today}")
-        return stocks
+                ltp,ycp,op,hi,lo,closep,vol=[float(x or 0) for x in r[1:8]]
+            except Exception:continue
+            if closep<=0 or vol<=0:continue  # aj trade hoyni
+            if op<=0:op=ycp if ycp>0 else closep
+            if hi<=0:hi=max(op,closep)
+            if lo<=0:lo=min(op,closep)
+            stocks[code]={'Date':session_date,'Open':round(op,2),'High':round(hi,2),
+                          'Low':round(lo,2),'Close':round(closep,2),'Volume':int(vol)}
+        print(f"Live API: {len(rows)} instrument, {len(stocks)} traded")
+        return session_date,stocks
     except Exception as e:
-        print(f"Fetch error: {e}")
-        return{}
+        print(f"Live API error: {e}")
+        return None,{}
 
 def update_csv(symbol,row):
     """CSV file e notun row add koro"""
@@ -218,66 +155,24 @@ def update_csv(symbol,row):
 
 def main():
     print("DSE data update shuru...")
-    # DSE kokhono Fri/Sat trade hoy na - ei script age eta check korto na,
-    # tai shuk/shoni o "ajker" data hishebe stale/bhul row likhe dicchilo,
-    # jeta RSI/MACD calculation nosto korar main karon chilo.
-    today_wd=datetime.now().weekday()  # 0=Mon..4=Fri,5=Sat,6=Sun
-    if today_wd in(4,5):
-        print("Aj Fri/Sat - DSE bondho, update skip kora holo")
+    # sessionDate = DSE-er nijer bola shesh trading din. Chhutir din / Fri /
+    # Sat e eta ager trading din-ei thake, ar oi date-er row age thekei ache
+    # bole update_csv() skip kore - tai holiday duplicate row ar hobe na,
+    # alada holiday-check lage na.
+    session_date,stocks=fetch_live_api()
+    if not session_date or not stocks:
+        print("Kono data pawa jaini - update skip")
         return
-
-    # Eid/Puja/sorkari chhutir din-o (Sun-Thu hoyeo) DSE bondho thakte
-    # pare - eta dhorar jonno real check kori.
-    today=datetime.now().strftime('%Y-%m-%d')
-    trading=is_dse_trading_day(today)
-    if trading is False:
-        print(f"Aj ({today}) DSE chhuti (holiday) - update skip kora holo")
+    try:
+        datetime.strptime(session_date,'%Y-%m-%d')
+    except Exception:
+        print(f"Onirvorjoggo sessionDate '{session_date}' - skip")
         return
-
-    stocks=fetch_today()
-    if not stocks:
-        print("Kono data pawa jaini - DSE bondho thakte pare")
-        return
-
-    if trading is None:
-        # Archive page check fail korle (404/SSL/timeout - 2026-09-22 SSL
-        # ar 2026-09-24 HTTP 404 dutoi hoyeche) puro update skip na kore,
-        # live data nijei stale holiday-copy kina check kori: chhutir dine
-        # live page ager diner hubohu OHLCV dekhay (Aug-5, Eid, Aug-26 -
-        # prai 100% row identical chilo). Shotti trading dine volume/dam
-        # beshirvag stock-e bodlay.
-        same=0;compared=0
-        for sym,row in stocks.items():
-            path=f"{DATA_DIR}/{sym}.csv"
-            if not os.path.exists(path):continue
-            with open(path) as f:
-                rows=list(csv.DictReader(f))
-            if not rows:continue
-            last=rows[-1]
-            if last['Date'].strip()==today:continue
-            try:
-                identical=(abs(float(last['Close'])-row['Close'])<1e-9 and
-                           abs(float(last['High'])-row['High'])<1e-9 and
-                           abs(float(last['Low'])-row['Low'])<1e-9 and
-                           int(float(last['Volume']))==int(row['Volume']))
-            except:continue
-            compared+=1
-            if identical:same+=1
-        ratio=same/compared if compared else 1.0
-        print(f"Archive check uncertain - fallback: {same}/{compared} stock ager diner hubohu copy ({ratio*100:.0f}%)")
-        if compared<50 or ratio>=0.5:
-            print(f"Aj ({today}) stale/holiday data mone hocche ba jothesto tulona nei - update skip")
-            return
-        print(f"Aj ({today}) live data notun - trading day hishebe update korchi")
-
-    updated=0;skipped=0;new_stocks=0
+    updated=0;skipped=0
     for sym,row in stocks.items():
-        if update_csv(sym,row):
-            updated+=1
-        else:
-            skipped+=1
-
-    print(f"Done! Updated:{updated} Skipped(already exists):{skipped}")
+        if update_csv(sym,row):updated+=1
+        else:skipped+=1
+    print(f"Done! Date:{session_date} Updated:{updated} Skipped(already exists):{skipped}")
 
 class _Tee:
     """update_data.py-r output data/_debug_update.txt e-o likhi, jate
@@ -290,10 +185,6 @@ class _Tee:
 
 if __name__=='__main__':
     import sys
-    try:
-        import probe_dse  # temporary diagnostic, remove after
-    except Exception as _pe:
-        print('probe err',_pe)
     _logf=open(f"{DATA_DIR}/_debug_update.txt","w")
     sys.stdout=_Tee(sys.__stdout__,_logf)
     print(f"=== update_data run {datetime.now().isoformat()} ===")
