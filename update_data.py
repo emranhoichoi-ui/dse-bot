@@ -123,10 +123,18 @@ def fetch_today():
                     try:nums.append(float(c.replace(',','')))
                     except:nums.append(0.0)
                 if len(nums)<5:continue
+                # dsebd latest-share-price table columns: LTP, HIGH, LOW,
+                # CLOSEP, YCP, CHANGE, TRADE, VALUE(mn), VOLUME - kono OPEN
+                # column nei. Age nums[1]/[2]/[3] ke Open/High/Low dhora hoto,
+                # fole store hocchilo Open=HIGH, High=LOW, Low=CLOSEP (last
+                # 20 diner 81% row-e High<Low ba Close range-er baire chilo).
                 ltp=nums[0]
-                op=nums[1] if len(nums)>1 and nums[1]>0 else ltp
-                hi=nums[2] if len(nums)>2 and nums[2]>0 else ltp
-                lo=nums[3] if len(nums)>3 and nums[3]>0 else ltp
+                hi=nums[1] if len(nums)>1 and nums[1]>0 else ltp
+                lo=nums[2] if len(nums)>2 and nums[2]>0 else ltp
+                closep=nums[3] if len(nums)>3 and nums[3]>0 else ltp
+                ycp=nums[4] if len(nums)>4 and nums[4]>0 else closep
+                op=ycp  # Open column nei - ager diner close-ke approximation hishebe
+                ltp=closep  # din sheshe official close price
                 vol=0
                 for n in nums[6:]:
                     if 100<=n<=999999999 and n>vol:vol=n
