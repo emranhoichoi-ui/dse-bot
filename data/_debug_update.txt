@@ -1,0 +1,5 @@
+=== update_data run 2026-09-24T17:51:15.860503 ===
+DSE data update shuru...
+TradingDayCheck(2026-09-24): HTTP 404, response length 213920
+Fetch error: 404 Client Error: Not Found for url: https://www.dsebd.org/latest_share_price_scroll_by_value.php
+Kono data pawa jaini - DSE bondho thakte pare
