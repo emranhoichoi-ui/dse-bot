@@ -1,10 +1,6 @@
-=== update_data run 2026-09-24T17:52:40.260829 ===
+=== update_data run 2026-09-24T17:57:24.360515 ===
 DSE data update shuru...
 TradingDayCheck(2026-09-24): HTTP 404, response length 213920
-  try latest_share_price_scroll_by_value.php: HTTP 404
-  try latest_share_price_scroll_by_ltp.php: HTTP 404
-  try latest_share_price_scroll_by_change.php: HTTP 404
-  try latest_share_price_scroll_l.php: HTTP 404
-  try latest_share_price_scroll_group.php: HTTP 404
-Fetch error: kono latest-share-price page-i 200 dey ni
+  try latest-share-price: HTTP 200
+Fetched 0 stocks for 2026-09-24
 Kono data pawa jaini - DSE bondho thakte pare
