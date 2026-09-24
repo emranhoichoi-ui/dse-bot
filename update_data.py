@@ -176,15 +176,45 @@ def main():
     # pare - eta dhorar jonno real check kori.
     today=datetime.now().strftime('%Y-%m-%d')
     trading=is_dse_trading_day(today)
-    if trading is not True:
-        reason="DSE chhuti (holiday)" if trading is False else "check failed/uncertain - shafe thakar jonno skip"
-        print(f"Aj ({today}) {reason} - update skip kora holo")
+    if trading is False:
+        print(f"Aj ({today}) DSE chhuti (holiday) - update skip kora holo")
         return
 
     stocks=fetch_today()
     if not stocks:
         print("Kono data pawa jaini - DSE bondho thakte pare")
         return
+
+    if trading is None:
+        # Archive page check fail korle (404/SSL/timeout - 2026-09-22 SSL
+        # ar 2026-09-24 HTTP 404 dutoi hoyeche) puro update skip na kore,
+        # live data nijei stale holiday-copy kina check kori: chhutir dine
+        # live page ager diner hubohu OHLCV dekhay (Aug-5, Eid, Aug-26 -
+        # prai 100% row identical chilo). Shotti trading dine volume/dam
+        # beshirvag stock-e bodlay.
+        same=0;compared=0
+        for sym,row in stocks.items():
+            path=f"{DATA_DIR}/{sym}.csv"
+            if not os.path.exists(path):continue
+            with open(path) as f:
+                rows=list(csv.DictReader(f))
+            if not rows:continue
+            last=rows[-1]
+            if last['Date'].strip()==today:continue
+            try:
+                identical=(abs(float(last['Close'])-row['Close'])<1e-9 and
+                           abs(float(last['High'])-row['High'])<1e-9 and
+                           abs(float(last['Low'])-row['Low'])<1e-9 and
+                           int(float(last['Volume']))==int(row['Volume']))
+            except:continue
+            compared+=1
+            if identical:same+=1
+        ratio=same/compared if compared else 1.0
+        print(f"Archive check uncertain - fallback: {same}/{compared} stock ager diner hubohu copy ({ratio*100:.0f}%)")
+        if compared<50 or ratio>=0.5:
+            print(f"Aj ({today}) stale/holiday data mone hocche ba jothesto tulona nei - update skip")
+            return
+        print(f"Aj ({today}) live data notun - trading day hishebe update korchi")
 
     updated=0;skipped=0;new_stocks=0
     for sym,row in stocks.items():
