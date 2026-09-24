@@ -6,7 +6,7 @@ Dates to fill: 19
 === DEBUG for 2026-01-25 ===
 URL: https://www.dsebd.org/day_end_archive.php?startDate=2026-01-25&endDate=2026-01-25&archive=data
 HTTP status: 404
-Response length: 213920 chars
+Response length: 213877 chars
 First 500 chars of response:
 <!DOCTYPE html><html id="__next_error__"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/0hpn32ysw1bi2.js"/><script src="/_next/static/chunks/1mbszwn3qlv9h.js" async=""></script><script src="/_next/static/chunks/2dtr8iqm0yi7x.js" async=""></script><script src="/_next/static/chunks/374m-o_4w6uce.js" async=""></script><script src="/_next/static/chunks/turbopack-40jiq-s7t
   2026-01-25: HTTP 404
