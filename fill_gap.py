@@ -78,7 +78,7 @@ _DEBUG_CAPTURED=[False]
 def fetch_all_stocks_for_date(date):
     """Ek diner sob stock er data ane - header theke column position ber kore,
     dsebd.org er table layout change hole o kaj kore"""
-    url=f"https://www.dsebd.org/day_end_archive.php?endDate={date}&archive=data"
+    url=f"https://www.dsebd.org/day_end_archive.php?startDate={date}&endDate={date}&archive=data"  # range form - single endDate form returns ticker page, not archive (same fix as bot.py b4bc513 / update_data.py 9184fff3)
     capture=not _DEBUG_CAPTURED[0]
     try:
         r=_dse_get(url,headers=HEADERS,timeout=20,verify=False)
