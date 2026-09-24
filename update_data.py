@@ -119,6 +119,21 @@ def fetch_today():
                     _i=_t.find(_kw)
                     _f.write(f"\n\n### '{_kw}' first at {_i}, count={_t.count(_kw)}\n")
                     if _i>=0:_f.write(_t[max(0,_i-700):_i+900])
+                _f.write("\n\n### \\\"code\\\" occurrences: "+str(_t.count('\\"code\\":')))
+                # JS chunk gulo theke data API endpoint khuji
+                _chunks=sorted(set(_re.findall(r'/_next/static/chunks/[A-Za-z0-9_\-\.~]+\.js',_t)))
+                _f.write(f"\n\n### {len(_chunks)} JS chunks; endpoint candidates:\n")
+                _seen=set()
+                for _c in _chunks:
+                    try:
+                        _js=_dse_get("https://dsebd.org"+_c,headers=HEADERS,timeout=20,verify=False).text
+                    except Exception:continue
+                    for _m in _re.findall(r'["\'`](/?(?:api|v1|v2|graphql|market|markets|share|price|ltp)[A-Za-z0-9_\-/\.\?=&${}]*)["\'`]',_js):
+                        if _m not in _seen and 'media' not in _m:
+                            _seen.add(_m);_f.write(f"{_c.split('/')[-1]}: {_m}\n")
+                    for _m in _re.findall(r'https?://[A-Za-z0-9\.\-]+(?::\d+)?/[A-Za-z0-9_\-/\.]*',_js):
+                        if _m not in _seen and 'w3.org' not in _m and 'react' not in _m:
+                            _seen.add(_m);_f.write(f"{_c.split('/')[-1]}: URL {_m}\n")
                 _f.write("\n\n### next-data api hints: "+" | ".join(sorted(set(_re.findall(r'(/api/[A-Za-z0-9_\-/]+)',_t)))[:60]))
         except Exception as _e:print(f"diag dump err {_e}")
         soup=BeautifulSoup(r.text,'html.parser')
