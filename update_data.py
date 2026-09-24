@@ -84,12 +84,28 @@ def is_dse_trading_day(date_str):
 
 def fetch_today():
     """dsebd.org theke ajer sob stock er data ano"""
-    url="https://www.dsebd.org/latest_share_price_scroll_by_value.php"
+    # 2026-09-24 theke ..._by_value.php HTTP 404 dicche, kintu dsebd.org-er
+    # onno latest-share-price page gulo (same table format) chalu ache -
+    # tai ekta ekta kore try kori, prothom je ta 200 dey seta use kori.
+    urls=["https://www.dsebd.org/latest_share_price_scroll_by_value.php",
+          "https://www.dsebd.org/latest_share_price_scroll_by_ltp.php",
+          "https://www.dsebd.org/latest_share_price_scroll_by_change.php",
+          "https://www.dsebd.org/latest_share_price_scroll_l.php",
+          "https://www.dsebd.org/latest_share_price_scroll_group.php"]
     stocks={}
     today=datetime.now().strftime('%Y-%m-%d')
     try:
-        r=_dse_get(url,headers=HEADERS,timeout=30,verify=False)
-        r.raise_for_status()
+        r=None
+        for url in urls:
+            try:
+                rr=_dse_get(url,headers=HEADERS,timeout=30,verify=False)
+                print(f"  try {url.split('/')[-1]}: HTTP {rr.status_code}")
+                if rr.status_code==200:
+                    r=rr;break
+            except Exception as ee:
+                print(f"  try {url.split('/')[-1]}: {ee.__class__.__name__}")
+        if r is None:
+            raise Exception("kono latest-share-price page-i 200 dey ni")
         soup=BeautifulSoup(r.text,'html.parser')
         for row in soup.find_all('tr'):
             cols=row.find_all('td')
