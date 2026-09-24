@@ -225,5 +225,22 @@ def main():
 
     print(f"Done! Updated:{updated} Skipped(already exists):{skipped}")
 
+class _Tee:
+    """update_data.py-r output data/_debug_update.txt e-o likhi, jate
+    workflow commit-e ashe - Actions log baire theke pora jay na."""
+    def __init__(self,*s):self.s=s
+    def write(self,x):
+        for f in self.s:f.write(x)
+    def flush(self):
+        for f in self.s:f.flush()
+
 if __name__=='__main__':
-    main()
+    import sys
+    _logf=open(f"{DATA_DIR}/_debug_update.txt","w")
+    sys.stdout=_Tee(sys.__stdout__,_logf)
+    print(f"=== update_data run {datetime.now().isoformat()} ===")
+    try:
+        main()
+    finally:
+        sys.stdout=sys.__stdout__
+        _logf.close()
