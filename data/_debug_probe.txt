@@ -1,0 +1,115 @@
+
+
+##### https://dsebd.org/api/live/prices
+HTTP 200 ctype=application/json; charset=utf-8 len=59891 tr=0 TRADINGCODE=False
+8,22.2,22.5,22.6,21.7,21.8,3715091,82.077,2608,-1.8018018018017956,"B","PUBLIC","Misc","EQ"],["BGIC",42.1,41.6,41.5,42.3,41.5,42.1,114638,4.822,268,1.2019230769230769,"A","PUBLIC","Insurance","EQ"],["BIFC",3.6,3.7,3.8,3.8,3.6,3.6,61077,0.221,45,-2.702702702702705,"Z","PUBLIC","Financial In","EQ"],["BNICL",167.5,156.3,156.3,169.3,156.3,167.5,484841,80.388,1309,7.165706973768386,"A","PUBLIC","Insurance","EQ"],["BPML",28,28,28.1,29.8,27.9,28,69773,2.002,190,0,"Z","PUBLIC","PaperPrint","EQ"],["BPPL",19.2,19.5,19.5,19.7,19.1,19.2,780700,15.15,526,-1.538461538461542,"B","PUBLIC","FuelPower","EQ"],["BRACBANK",64.2,64.5,64.6,64.7,64,64.2,2434677,156.791,1317,-0.465116279069763,"A","PUBLIC","Bank","EQ"],["BSC",110.2,112,113.2,113.3,109.5,110.2,203672,22.619,683,-1.6071428571428545,"A","PUBLIC","Misc","EQ"],["BSCPLC",147.6,148.4,149.9,149.9,147.6,147.9,10058,1.489,115,-0.5390835579514901,"A","PUBLIC","Telecom","EQ"],["BSRMLTD",96.3,96.8,97.4,97.4,96,96.3,17002,1.643,190,-0.5165289256198348,"A","PUBLIC","Engineering","EQ"],["BSRMSTEEL",85.8,87.5,87,88.5,85.5,85.8,105632,9.131,631,-1.9428571428571462,"A","PUBLIC","Engineering","EQ"],["BXPHARMA",148.4,149.4,149.2,150,148.1,148.4,349479,51.969,746,-0.6693440428380187,"A","PUBLIC","PharmaChem","EQ"],["CAPITECGBF",9.2,8.9,8.9,9.4,8.8,9.2,2113034,19.105,499,3.370786516853921,"A","PUBLIC","MutFund","MF"],["CAPMBDBLMF",0,7.2,0,0,0,7.2,0,0,0,null,"A","PUBLIC","MutFund","MF"],["CAPMIBBLMF",14.5,14.5,14.4,14.6,14,14.5,1113147,15.958,614,0,"A","PUB
+
+##### https://dsebd.org/api/live/companies/quotes
+HTTP 200 ctype=application/json; charset=utf-8 len=840 tr=0 TRADINGCODE=False
+{"rows":[{"code":"CNATEX","name":"C & A Textiles Limited","price":3.3,"changePct":9.999999999999993},{"code":"SIPLC","name":"Sena Insurance PLC","price":148.9,"changePct":9.970457902511077},{"code":"PRIME1ICBA","name":"Prime Bank 1st ICB AMCL Mutual Fund","price":7.2,"changePct":9.090909090909099},{"code":"TUNGHAI","name":"Tung Hai Knitting & Dyeing Limited","price":4.2,"changePct":7.6923076923077},{"code":"EMERALDOIL","name":"Emerald Oil Industries Ltd.","price":29.4,"changePct":7.6923076923076845},{"code":"IBBLPBOND","name":"IBBL Mudaraba Perpetual Bond","price":650,"changePct":7.43801652892562},{"code":"BNICL","name":"Bangladesh National Insurance Company Limited","price":167.5,"changePct":7.165706973768386},{"code":"ICBAMCL2ND","name":"ICB AMCL Second Mutual Fund","price":10.4,"changePct":6.122448979591832}],"trending":true}
+
+##### https://dsebd.org/api/live/market
+HTTP 200 ctype=application/json; charset=utf-8 len=7428 tr=0 TRADINGCODE=False
+{"indices":[{"key":"DSEX","value":5578.3276,"change":-17.89099,"percent":-0.3197,"prev":5596.2185899999995},{"key":"DS30","value":2112.12711,"change":-10.59929,"percent":-0.49932,"prev":2122.7264},{"key":"DSES","value":1115.88576,"change":-3.43663,"percent":-0.30703,"prev":1119.3223899999998}],"totals":{"trades":202860,"volume":238268268,"turnover":7563.161,"marketCap":6905718611418,"tradeTime":"Sep 24, 2026 at 2:40 PM"},"breadth":{"advanced":141,"declined":190,"unchanged":57,"traded":388},"session":{"isOpen":false,"phase":"closed","tradingDay":false,"opening":"10:00","closing":"14:00","date":"2026-09-25","sessionDate":"2026-09-24","today":null,"next":{"date":"2026-09-27","preOpening":"09:55","opening":"10:00","closing":"14:00","postClosing":"14:10"}},"movers":{"gainers":[{"code":"SIPLC","ltp":148.9,"open":135.5,"high":148.9,"low":135.4,"percent":9.889298892988934},{"code":"PRIME1ICBA","ltp":7.2,"open":6.6,"high":7.2,"low":6.3,"percent":9.0909090909091},{"code":"IBBLPBOND","ltp":650,"open":606,"high":650,"low":606,"percent":7.2607260726072615},{"code":"BNICL","ltp":167.5,"open":156.3,"high":169.3,"low":156.3,"percent":7.165706973768386},{"code":"IBP","ltp":15.4,"open":14.4,"high":15.9,"low":14.4,"percent":6.944444444444445},{"code":"ICBAMCL2ND","ltp":10.4,"open":9.8,"high":10.5,"low":9.6,"percent":6.122448979591832},{"code":"ISNLTD","ltp":55.1,"open":52,"high":57.6,"low":52,"percent":5.961538461538464},{"code":"1STPRIMFMF","ltp":35.4,"open":33.5,"high":36.9,"low":31.7,"percen
+
+##### https://old.dsebd.org/latest_share_price_scroll_by_value.php
+HTTP 200 ctype=text/html; charset=UTF-8 len=537331 tr=817 TRADINGCODE=True
+top'>
+											BPPL&nbsp;&nbsp;&nbsp;19.20&nbsp;&nbsp;&nbsp;&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-0.30&nbsp;&nbsp;&nbsp;&nbsp;-1.54%	                       				</a>
+	                       				<br>
+          							</td>
+          						</tr>
+          					</table>
+	  					</td>
+      					<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+											<td valign='top' height='30'>
+							<table width="120" border="0" cellspacing="0" cellpadding="0">
+								<tr>
+									<td height='30' width='100%'>
+										<a href="displayCompany.php?name=BRACBANK" class='abhead' target='_top'>
+											BRACBANK&nbsp;64.20&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-0.30&nbsp;&nbsp;&nbsp;&nbsp;-0.47%	                       				</a>
+	                       				<br>
+          							</td>
+          						</tr>
+          					</table>
+	  					</td>
+      					<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+											<td valign='top' height='30'>
+							<table width="100" border="0" cellspacing="0" cellpadding="0">
+								<tr>
+									<td height='30' width='100%'>
+										<a href="displayCompany.php?name=BSC" class='abhead' target='_top'>
+											BSC&nbsp;&nbsp;&nbsp;110.20&nbsp;&nbsp;&nbsp;&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-1.80&nbsp;&nbsp;&nbsp;&nbsp;-1.61%	                       				</a>
+	                       				<br>
+          		
+
+##### https://old.dsebd.org/day_end_archive.php?startDate=2026-09-22&endDate=2026-09-22&archive=data
+HTTP 200 ctype=text/html; charset=UTF-8 len=290710 tr=423 TRADINGCODE=True
+top'>
+											BPPL&nbsp;&nbsp;&nbsp;19.20&nbsp;&nbsp;&nbsp;&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-0.30&nbsp;&nbsp;&nbsp;&nbsp;-1.54%	                       				</a>
+	                       				<br>
+          							</td>
+          						</tr>
+          					</table>
+	  					</td>
+      					<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+											<td valign='top' height='30'>
+							<table width="120" border="0" cellspacing="0" cellpadding="0">
+								<tr>
+									<td height='30' width='100%'>
+										<a href="displayCompany.php?name=BRACBANK" class='abhead' target='_top'>
+											BRACBANK&nbsp;64.20&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-0.30&nbsp;&nbsp;&nbsp;&nbsp;-0.47%	                       				</a>
+	                       				<br>
+          							</td>
+          						</tr>
+          					</table>
+	  					</td>
+      					<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+											<td valign='top' height='30'>
+							<table width="100" border="0" cellspacing="0" cellpadding="0">
+								<tr>
+									<td height='30' width='100%'>
+										<a href="displayCompany.php?name=BSC" class='abhead' target='_top'>
+											BSC&nbsp;&nbsp;&nbsp;110.20&nbsp;&nbsp;&nbsp;&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-1.80&nbsp;&nbsp;&nbsp;&nbsp;-1.61%	                       				</a>
+	                       				<br>
+          		
+
+##### https://old.dsebd.org/day_end_archive.php?startDate=2026-09-24&endDate=2026-09-24&archive=data
+HTTP 200 ctype=text/html; charset=UTF-8 len=290710 tr=423 TRADINGCODE=True
+top'>
+											BPPL&nbsp;&nbsp;&nbsp;19.20&nbsp;&nbsp;&nbsp;&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-0.30&nbsp;&nbsp;&nbsp;&nbsp;-1.54%	                       				</a>
+	                       				<br>
+          							</td>
+          						</tr>
+          					</table>
+	  					</td>
+      					<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+											<td valign='top' height='30'>
+							<table width="120" border="0" cellspacing="0" cellpadding="0">
+								<tr>
+									<td height='30' width='100%'>
+										<a href="displayCompany.php?name=BRACBANK" class='abhead' target='_top'>
+											BRACBANK&nbsp;64.20&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-0.30&nbsp;&nbsp;&nbsp;&nbsp;-0.47%	                       				</a>
+	                       				<br>
+          							</td>
+          						</tr>
+          					</table>
+	  					</td>
+      					<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+											<td valign='top' height='30'>
+							<table width="100" border="0" cellspacing="0" cellpadding="0">
+								<tr>
+									<td height='30' width='100%'>
+										<a href="displayCompany.php?name=BSC" class='abhead' target='_top'>
+											BSC&nbsp;&nbsp;&nbsp;110.20&nbsp;&nbsp;&nbsp;&nbsp;<img src='assets/imgs/tkdown.gif' border='0'>							   				<br>
+							   				-1.80&nbsp;&nbsp;&nbsp;&nbsp;-1.61%	                       				</a>
+	                       				<br>
+          		
