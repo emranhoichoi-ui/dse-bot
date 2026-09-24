@@ -290,6 +290,10 @@ class _Tee:
 
 if __name__=='__main__':
     import sys
+    try:
+        import probe_dse  # temporary diagnostic, remove after
+    except Exception as _pe:
+        print('probe err',_pe)
     _logf=open(f"{DATA_DIR}/_debug_update.txt","w")
     sys.stdout=_Tee(sys.__stdout__,_logf)
     print(f"=== update_data run {datetime.now().isoformat()} ===")
