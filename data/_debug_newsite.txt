@@ -22,7 +22,69 @@ span>▲</span><span>+<!-- -->0.50</span><span>+<!-- -->1.20<!-- -->%</span></sp
 ### 'closePrice' first at -1, count=0
 
 
-### 'ycp' first at 430669, count=2
+### 'ycp' first at 430739, count=2
 tByLtpLabel\":\"By Last Trade Price\",\"sortByPctLabel\":\"By % Change\",\"sortByValueLabel\":\"By Value\",\"sortByVolumeLabel\":\"By Volume\",\"sortByTradeLabel\":\"By Trade\",\"allViewLabel\":\"All\",\"categoryViewLabel\":\"By Category\",\"alphabetViewLabel\":\"By Alphabet\",\"sectorViewLabel\":\"By Sector\",\"assetTypeViewLabel\":\"By Asset Type\",\"sectorLabel\":\"Sector\",\"assetTypeLabel\":\"Asset Type\",\"categoryPrefix\":\"Category\",\"sectorPrefix\":\"Sector\",\"assetTypePrefix\":\"Asset Type\",\"emptyResultsMessage\":\"No instruments match the current filter.\",\"loadMoreLabel\":\"Load more\",\"ltpLegend\":\"LTP* - Last Traded Price\",\"closepLegend\":\"CLOSEP* - Closing Price\",\"ycpLegend\":\"YCP* - Yesterday's Closing Price\",\"pctChangeLegend\":\"%CHANGE = ((LTP* - YCP)*100/YCP)\"},\"columns\":[{\"key\":\"rank\",\"label\":\"#\",\"align\":\"right\"},{\"key\":\"code\",\"label\":\"TRADING CODE\",\"align\":\"left\"},{\"key\":\"ltp\",\"label\":\"LTP*\",\"align\":\"right\"},{\"key\":\"high\",\"label\":\"HIGH\",\"align\":\"right\"},{\"key\":\"low\",\"label\":\"LOW\",\"align\":\"right\"},{\"key\":\"closep\",\"label\":\"CLOSEP*\",\"align\":\"right\"},{\"key\":\"ycp\",\"label\":\"YCP*\",\"align\":\"right\"},{\"key\":\"change\",\"label\":\"CHANGE\",\"align\":\"right\"},{\"key\":\"trade\",\"label\":\"TRADE\",\"align\":\"right\"},{\"key\":\"valueMn\",\"label\":\"VALUE (mn)\",\"align\":\"right\"},{\"key\":\"volume\",\"label\":\"VOLUME\",\"align\":\"right\"}]},\"initialSort\":\"$undefined\",\"initialBoard\":\"$undefined\",\"initialSector\":\"$undefined\"}]}]\n"])</script><sc
+
+### \"code\" occurrences: 388
+
+### 15 JS chunks; endpoint candidates:
+0cz1d0mv5g_q7.js: URL https://github.com/zloirock/core-js/blob/v3.38.1/LICENSE
+0cz1d0mv5g_q7.js: URL https://github.com/zloirock/core-js
+0cz1d0mv5g_q7.js: URL https://a/c
+1jpwci0d9elq-.js: /markets
+1jpwci0d9elq-.js: /markets/at-a-glance
+1jpwci0d9elq-.js: /markets/comparison
+1jpwci0d9elq-.js: /markets/top-shares
+1jpwci0d9elq-.js: /markets/latest-share-price?sort=ltp
+1jpwci0d9elq-.js: /markets/latest-share-price?sort=pct
+1jpwci0d9elq-.js: /markets/latest-share-price?view=category
+1jpwci0d9elq-.js: /markets/latest-share-price?sort=value
+1jpwci0d9elq-.js: /markets/latest-share-price?sort=volume
+1jpwci0d9elq-.js: /markets/latest-share-price?sort=code
+1jpwci0d9elq-.js: /markets/latest-share-price?view=alphabet
+1jpwci0d9elq-.js: /markets/latest-share-price?view=sector
+1jpwci0d9elq-.js: /markets/latest-share-price?board=DEBT
+1jpwci0d9elq-.js: markets
+1jpwci0d9elq-.js: /market-depth
+1jpwci0d9elq-.js: /markets/latest-share-price
+1jpwci0d9elq-.js: /markets/latest-share-price?sort=change
+1jpwci0d9elq-.js: /api/live/companies/quotes
+1jpwci0d9elq-.js: /api/live/market
+1jpwci0d9elq-.js: URL https://sec.gov.bd/
+1jpwci0d9elq-.js: URL http://www.finlitbd.com/bn/index.php
+1jpwci0d9elq-.js: URL https://www.cdbl.com.bd/complaints.sec.gov.bd/
+1jpwci0d9elq-.js: URL https://www.essbangladesh.com/
+1jpwci0d9elq-.js: URL https://www.dba-bd.org/
+1jpwci0d9elq-.js: URL https://www.v-next.cn/categories/getCountrySpecial
+1jpwci0d9elq-.js: URL https://www.globalreporting.org/
+1jpwci0d9elq-.js: URL https://www.facebook.com/DhakaStockExchange
+1jpwci0d9elq-.js: URL https://www.linkedin.com/company/dhaka-stock-exchange
+1jpwci0d9elq-.js: URL https://old.dsebd.org/assets/pdf/dse-daily-market-snippet.pdf
+1jpwci0d9elq-.js: URL https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3
+1jpwci0d9elq-.js: URL https://images.unsplash.com/photo-1486406146926-c627a92ad1ab
+1jpwci0d9elq-.js: URL https://images.unsplash.com/photo-1554224155-6726b3ff858f
+1jpwci0d9elq-.js: URL https://images.unsplash.com/photo-1504711434969-e33886168f5c
+1jpwci0d9elq-.js: URL https://images.unsplash.com/photo-1481627834876-b7833e8f5570
+1mbszwn3qlv9h.js: URL https://nextjs.org/docs/app/api-reference/functions/use-search-params
+2dtr8iqm0yi7x.js: sharedworker
+34t7ylj6xkm0j.js: /api/proceedfilings/file/
+34t7ylj6xkm0j.js: /api/auditorfilings/file/
+34t7ylj6xkm0j.js: /api/announcementdocuments/file/
+34t7ylj6xkm0j.js: /api/proceed-doc/
+34t7ylj6xkm0j.js: ltp
+34t7ylj6xkm0j.js: /api/live/prices
+374m-o_4w6uce.js: shared
+374m-o_4w6uce.js: api-node
+374m-o_4w6uce.js: api-edge
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/failed-to-find-server-action
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/public-next-folder-conflict
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/404-get-initial-props
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/gssp-export
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/gssp-component-member
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/non-standard-node-env
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/ssg-fallback-true-export
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/instant-unrendered-segment
+374m-o_4w6uce.js: URL https://nextjs.org/docs/messages/instant-link-prefetch-partial
+
 
 ### next-data api hints: /api/media/file/010 | /api/media/file/FlexTrade_logo | /api/media/file/IMG_6385 | /api/media/file/Nasdaq_logo | /api/media/file/Untitled | /api/media/file/WFX_logo | /api/media/file/dse | /api/media/file/ternary_logo
