@@ -811,6 +811,74 @@ def fmt_accumulation(results):
                       f"52w Position:{r['position_pct']}% | Structure:{r['structure']}")
     return "\n".join(lines)
 
+# ══════════════════════
+#  FOOD & ALLIED MOMENTUM (daily)
+# ══════════════════════
+# Backtest (2013-2025, 22 Food & Allied stocks, 1 entry/stock/28 days):
+# ei sector MOMENTUM-driven (insurance er ulto) - dam kome gele/RSI kom-e
+# kena kharap (RSI<30: P(1yr>=30%) 25%, 52w-low er kache 25%), kintu
+# uptrend + notun 52-week high e kena valo. Entry: close>MA200, MA50>MA200,
+# close > ager 252 diner shorbochcho close. Exit: SL -15% / TP +40% (close
+# basis), na hole 1 bochor por time-exit. Result (n=244): P(>=30%) 44.7%,
+# median +6.0%, mean(capped) +12.8%, 20%+ loss matro 2.9% (1yr hold e 26.6%).
+# Uptrend+52wHigh 13 bochorer 8 bochor baseline-er cheye valo; 2018-19 e
+# kaj kore ni. Mid-vol group best (P30 35%, median +11% 1yr hold);
+# speculative high-vol stock e momentum kono edge dey ni (median -2%).
+FOOD_SECTOR = ["AMCL(PRAN)","APEXFOODS","BANGAS","BATBC","BDTHAIFOOD","BEACHHATCH",
+    "BENGALBISC","EMERALDOIL","FINEFOODS","FUWANGFOOD","GEMINISEA","GHAIL","LOVELLO",
+    "MEGCONMILK","NTC","OLYMPIC","ORYZAAGRO","RAHIMAFOOD","RDFOOD","SHYAMPSUG",
+    "UNILEVERCL","YUSUFLOUR","ZEALBANGLA"]
+FOOD_BLUECHIP = {"BATBC","UNILEVERCL","OLYMPIC","AMCL(PRAN)","NTC"}
+FOOD_SPECULATIVE = {"EMERALDOIL","GEMINISEA","MEGCONMILK","ORYZAAGRO","ZEALBANGLA",
+    "SHYAMPSUG","BENGALBISC","BEACHHATCH","RAHIMAFOOD","BDTHAIFOOD"}
+FOOD_SL_PCT=0.15
+FOOD_TP_PCT=0.40
+FOOD_MAX_DAYS=365
+
+def scan_food_momentum(stocks,today_str=None):
+    """Food & Allied: uptrend + notun 52-week high. SL -15%, TP +40%,
+    1 bochor time-exit. Live LTP ke ajker close hishebe dhore, history
+    theke ajker row (thakle) bad diye ager 252 diner high-er sathe tulona."""
+    today_str=today_str or datetime.now(BD_TZ).strftime('%Y-%m-%d')
+    results=[]
+    for s in stocks:
+        sym=s['symbol']
+        if sym not in FOOD_SECTOR:continue
+        ltp=s.get('ltp',0)
+        if not ltp or ltp<3:continue
+        data=get_hist(sym)
+        if not data:continue
+        closes=list(data['closes']);dates=list(data['dates'])
+        if dates and dates[-1].strip()==today_str:
+            closes=closes[:-1]
+        if len(closes)<252:continue
+        prev_high=max(closes[-252:])
+        series=closes+[ltp]
+        ma50=sum(series[-50:])/50;ma200=sum(series[-200:])/200
+        if not(ltp>ma200 and ma50>ma200 and ltp>prev_high):continue
+        grp=('Blue-chip' if sym in FOOD_BLUECHIP else
+             'Speculative' if sym in FOOD_SPECULATIVE else 'Mid-vol')
+        results.append({'symbol':sym,'entry':round(ltp,2),
+            'sl':round(ltp*(1-FOOD_SL_PCT),2),'tp':round(ltp*(1+FOOD_TP_PCT),2),
+            'prev_high':round(prev_high,2),'ma50':round(ma50,2),'ma200':round(ma200,2),
+            'group':grp})
+    order={'Mid-vol':0,'Blue-chip':1,'Speculative':2}
+    results.sort(key=lambda r:(order[r['group']],r['symbol']))
+    return results
+
+def fmt_food_momentum(results):
+    if not results:return ""
+    lines=["\n\n🍚 FOOD & ALLIED MOMENTUM -- "+f"{len(results)} ti",
+           "(Uptrend + notun 52-week high. SL -15% / TP +40%, kono-tai na",
+           " hole 1 bochor por bikri. Backtest: 44.7% khetre +30%+, 20%+",
+           " loss matro 2.9%. Speculative stock-e edge nei - chhoto position)"]
+    for r in results:
+        warn=" ⚠️ Speculative" if r['group']=='Speculative' else f" [{r['group']}]"
+        lines.append(f"\n>>> {r['symbol']}{warn}")
+        lines.append(f"Entry:{r['entry']} | SL:{r['sl']} (-15%) | TP:{r['tp']} (+40%)")
+        lines.append(f"Ager 52w high:{r['prev_high']} | MA50:{r['ma50']} | MA200:{r['ma200']}")
+    return "\n".join(lines)
+
 def scan_volatile_watchlist(stocks):
     results=[]
     stock_map={s['symbol']:s for s in stocks}
@@ -2015,13 +2083,24 @@ def scan_sell_signals(open_sigs,stocks):
         stage=pos.get('stage',0)
         pl_pct=round((ltp-entry)/entry*100,1)
 
+        max_days=pos.get('max_days')
+        held=None
+        if max_days and pos.get('date'):
+            try:held=(datetime.now(BD_TZ).date()-datetime.strptime(pos['date'],'%Y-%m-%d').date()).days
+            except Exception:held=None
+        if ltp>sl and ltp<tp3 and held is not None and held>=max_days:
+            sell_alerts.append({'symbol':sym,'reason':f'TIME EXIT ({held} din hold)','ltp':ltp,'entry':entry,
+                                 'pl_pct':pl_pct,'action':'Shomoy shesh - shob sell kore din (full exit)'})
+            to_delete.append(sym)
+            continue
         if ltp<=sl:
             sell_alerts.append({'symbol':sym,'reason':'STOP LOSS HIT','ltp':ltp,'entry':entry,
                                  'pl_pct':pl_pct,'action':'Shob shell kore felun (full exit)'})
             to_delete.append(sym)
         elif stage<3 and ltp>=tp3:
-            sell_alerts.append({'symbol':sym,'reason':'TP3 HIT (Max Target)','ltp':ltp,'entry':entry,
-                                 'pl_pct':pl_pct,'action':'Baki shob sell kore din (full exit)'})
+            single=pos.get('signal')=='FOOD-MOMENTUM'
+            sell_alerts.append({'symbol':sym,'reason':'TARGET HIT (+40%)' if single else 'TP3 HIT (Max Target)','ltp':ltp,'entry':entry,
+                                 'pl_pct':pl_pct,'action':'Shob sell kore din (full exit)' if single else 'Baki shob sell kore din (full exit)'})
             to_delete.append(sym)
         elif stage<2 and ltp>=tp2:
             sell_alerts.append({'symbol':sym,'reason':'TP2 HIT','ltp':ltp,'entry':entry,
@@ -2143,6 +2222,20 @@ async def send_signals(bot):
             msg+=fmt_accumulation(accum_matches)
         except Exception as e:
             log.error(f"Insurance-accumulation scan error: {e}")
+
+        try:
+            food_matches=scan_food_momentum(stocks,today)
+            msg+=fmt_food_momentum(food_matches)
+            if food_matches:
+                open_sigs6,sha6=get_open_signals()
+                for m in food_matches:
+                    # ekta-i TP: tp1=tp2=tp3 -> scan_sell_signals TP3 branch e full exit
+                    open_sigs6[m['symbol']]={'entry':m['entry'],'sl':m['sl'],
+                        'tp1':m['tp'],'tp2':m['tp'],'tp3':m['tp'],
+                        'stage':0,'date':today,'signal':'FOOD-MOMENTUM','max_days':FOOD_MAX_DAYS}
+                save_open_signals(open_sigs6,sha6)
+        except Exception as e:
+            log.error(f"Food-momentum scan error: {e}")
 
         # Bristhoshpotibar (Thursday) e shoptaher shesh trading din - weekly
         # candle close hoy tokhon, tai Triple-Confirmation scanner shudhu ei
