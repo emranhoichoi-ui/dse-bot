@@ -1375,147 +1375,97 @@ def scan_breakouts(stocks):
 # ══════════════════════
 #  DSE LIVE
 # ══════════════════════
+# ══════════════════════
+#  DSE LIVE JSON API (dsebd.org redesign, 2026-09-24)
+# ══════════════════════
+# 2026-09-24 e dsebd.org Next.js e notun kore banano hoyeche - purono sob
+# .php page (latest_share_price_scroll_by_value.php, day_end_archive.php,
+# homepage DSEX regex, dse.com.bd alpha page) ekhon 404. Notun site-er JSON:
+#   /api/live/market -> indices (DSEX/DS30/DSES), session {date, tradingDay,
+#                       phase, sessionDate, next}, totals, breadth
+#   /api/live/prices -> list of rows: [code, ltp, ycp, open, high, low,
+#                       closep, volume, value_mn, trades, pct_change,
+#                       category, ..., sector, type]
+# Field order BNICL/BRACBANK diye site-er nijer movers (open/high/low) er
+# sathe mile verify kora; GitHub Actions-er update_data.py 24 Sep theke eta
+# diyei protidin shothik data likhche.
+DSE_API='https://dsebd.org/api/live'
+_live_cache={}
+
+def _dse_api(path):
+    """Ek minute cache soho JSON ani. Prothome normal (TLS verify) request;
+    dsebd.org-er SSL e shomossha hole (age hoyechilo) verify chhara retry."""
+    now=time.time()
+    hit=_live_cache.get(path)
+    if hit and now-hit[0]<60:return hit[1]
+    url=f"{DSE_API}/{path}"
+    try:
+        r=requests.get(url,headers=HEADERS,timeout=30)
+    except requests.exceptions.SSLError:
+        r=requests.get(url,headers=HEADERS,timeout=30,verify=False)
+    r.raise_for_status()
+    data=r.json()
+    _live_cache[path]=(now,data)
+    return data
+
+def live_market():
+    try:return _dse_api('market')
+    except Exception as e:
+        log.error(f"live_market: {e}");return None
+
+def live_prices():
+    """Returns {SYMBOL: {...}} - shudhu aj trade hoyeche emon EQ/MF instrument
+    (bond/treasury bad). Market bondho hole closep (official close), cholle ltp."""
+    try:
+        m=live_market() or {}
+        closed=((m.get('session') or {}).get('phase')=='closed')
+        p=_dse_api('prices')
+        rows=p if isinstance(p,list) else (p.get('rows') or p.get('data') or p.get('prices') or [])
+        out={}
+        for r in rows:
+            if not isinstance(r,list) or len(r)<8:continue
+            typ=str(r[-1]).upper() if len(r)>=15 else 'EQ'
+            if typ not in('EQ','MF'):continue
+            code=str(r[0]).strip().upper()
+            try:ltp,ycp,op,hi,lo,closep,vol=[float(x or 0) for x in r[1:8]]
+            except Exception:continue
+            price=closep if (closed and closep>0) else (ltp if ltp>0 else closep)
+            if price<=0 or vol<=0:continue
+            if op<=0:op=ycp if ycp>0 else price
+            if hi<=0:hi=max(op,price)
+            if lo<=0:lo=min(op,price)
+            if hi<lo:hi,lo=lo,hi
+            chg=((price-ycp)/ycp*100) if ycp>0 else 0.0
+            out[code]={'symbol':code,'ltp':round(price,2),'open':round(op,2),'high':round(hi,2),
+                       'low':round(lo,2),'yday':round(ycp,2),'change':round(chg,2),'volume':int(vol),'type':typ}
+        return out
+    except Exception as e:
+        log.error(f"live_prices: {e}");return {}
+
 def fetch_stocks_alpha():
-    """
-    fetch_stocks() shudhu 'by value' page scrape kore, jeta shudhu
-    top-turnover regular equity dekhay - Mutual Fund er moto kom-price
-    kintu decent-volume thaka instrument (jemon ABB1STMF, DBH1STMF)
-    kokhono ei list e ashe na, karon per-share value kom bole total
-    turnover value onujayi niche pore jay.
-
-    DSE-r 'latest_share_price_alpha.php?letter=X' page-e shob
-    instrument type (equity + MF) ekshathe, alphabetically, mishe
-    thake - eta diye shei gap fill kora hoy. Prottekta letter (A-Z)
-    ebong '#' (numeric-starting symbol jemon 1JANATAMF) er jonno
-    আলাদা page - total 27ta request.
-
-    NOTE (2026-08-06 debug log theke confirm hoyeche): ei page e
-    protita row/section er nijer আলাদা <table> tag ache (ekta page e
-    ~400 tables!) - header ekta table e, data rows onno shob table e
-    chorano. Tai table-by-table process korle header pawa table e
-    data thake na, ar data thaka table e header thake na - kono
-    row e parse hoy na. Fix: table boundary ignore kore pura page
-    theke shob <tr> ekshathe collect kori, header ekbar pele shei
-    col_map pura page er jonno reuse kori.
-    """
-    letters=list('ABCDEFGHIJKLMNOPQRSTUVWXYZ')+['#']
-    stocks={}
-    debug_done=False
-    for letter in letters:
-        try:
-            url=f"https://www.dse.com.bd/latest_share_price_alpha.php?letter={letter}"
-            r=requests.get(url,headers=HEADERS,timeout=20,verify=False)
-            if not debug_done:
-                log.info(f"AlphaFetch-DEBUG({letter}): HTTP {r.status_code}, response length {len(r.text)}")
-            if r.status_code!=200:continue
-            soup=BeautifulSoup(r.text,"html.parser")
-            all_rows=soup.find_all("tr")
-            if not debug_done:
-                log.info(f"AlphaFetch-DEBUG({letter}): {len(all_rows)} total <tr> found (table boundaries ignored)")
-
-            col={}
-            found=0
-            for row in all_rows:
-                cells=row.find_all(["td","th"])
-                if not cells:continue
-                cell_txt=[c.get_text(strip=True) for c in cells]
-                upper_txt=[c.upper() for c in cell_txt]
-
-                # is this the header row? (only needed once)
-                if not col and 'TRADING CODE' in ' '.join(upper_txt):
-                    for i,name in enumerate(upper_txt):
-                        if ('TRADING' in name and 'CODE' in name) or name in('SYMBOL','SCRIP'):col['sym']=i
-                        elif name.startswith('LTP'):col['ltp']=i
-                        elif name in('HIGH','HIGH*'):col['high']=i
-                        elif name in('LOW','LOW*'):col['low']=i
-                        elif name.startswith('CLOSEP') or name=='CLOSE':col['close']=i
-                        elif name in('VOLUME','VOLUME*'):col['vol']=i
-                    if not debug_done:
-                        log.info(f"AlphaFetch-DEBUG({letter}): header found ={upper_txt} col_map={col}")
-                    continue
-
-                if not all(k in col for k in('sym','ltp','high','low')):continue
-                if max(col.values())>=len(cells):continue
-                try:
-                    sym=cell_txt[col['sym']].upper()
-                    if not sym or len(sym)<2 or ' ' in sym:continue  # skip section labels like 'DSE TRAINING ACADEMY'
-                    ltp=float(cell_txt[col['ltp']].replace(',','') or 0)
-                    hi=float(cell_txt[col['high']].replace(',','') or 0)
-                    lo=float(cell_txt[col['low']].replace(',','') or 0)
-                    vol=float(cell_txt[col['vol']].replace(',','') or 0) if 'vol' in col else 0
-                    if ltp>0:
-                        stocks[sym]={'symbol':sym,'ltp':ltp,'high':hi if hi>0 else ltp,
-                                     'low':lo if lo>0 else ltp,'volume':vol,'change':0}
-                        found+=1
-                except:continue
-            if not debug_done:
-                log.info(f"AlphaFetch-DEBUG({letter}): parsed {found} symbols")
-            debug_done=True
-            time.sleep(1)  # respectful delay between letter pages
-        except Exception as e:
-            log.error(f"fetch_stocks_alpha({letter}): {e}")
-            continue
-    return stocks
+    """Purono alpha-listing page (dse.com.bd) ar nei. Notun /api/live/prices
+    e Mutual Fund shoho sob instrument ek shathe ashe, tai shekhan thekei."""
+    return live_prices()
 
 def fetch_stocks():
-    log.info("DSE fetch...")
-    url="https://www.dsebd.org/latest_share_price_scroll_by_value.php"
-    try:
-        r=requests.get(url,headers=HEADERS,timeout=30,verify=False);r.raise_for_status()
-        soup=BeautifulSoup(r.text,'html.parser')
-        stocks=[]
-        for row in soup.find_all('tr'):
-            cols=row.find_all('td')
-            if len(cols)<9:continue
-            cells=[c.get_text(strip=True) for c in cols]
-            sym=None;si=0
-            for i,cell in enumerate(cells[:4]):
-                cl=cell.replace('-','').replace('_','')
-                if cl.isalpha() and 2<=len(cell)<=12 and cell.upper() not in('SL','NO','SYMBOL','NAME','CODE','TRADE'):
-                    sym=cell.upper();si=i;break
-            if not sym:continue
-            nums=[sf(c) for c in cells[si+1:]]
-            if len(nums)<6:continue
-            if len(stocks)<3:
-                log.info(f"COLUMN-DEBUG {sym}: raw_cells={cells[si+1:si+10]} parsed_nums={nums[:9]}")
-            ltp=nums[0];hi=nums[2] if len(nums)>2 else 0
-            lo=nums[3] if len(nums)>3 else 0
-            yd=nums[4] if len(nums)>4 else 0
-            chg=nums[5] if len(nums)>5 else 0
-            vol=0
-            for n in nums[6:]:
-                if 1000<=n<=999999999 and n>vol:vol=n
-            vol=int(vol)
-            if ltp<MIN_PRICE or vol<MIN_VOLUME or abs(chg)>MAX_CHANGE:continue
-            if hi<=0:hi=ltp
-            if lo<=0:lo=ltp
-            if hi<lo:hi,lo=lo,hi
-            stocks.append({'symbol':sym,'ltp':round(ltp,2),'high':round(hi,2),
-                           'low':round(lo,2),'yday':round(yd,2),'change':round(chg,2),'volume':vol})
-        seen=set();unique=[]
-        for s in stocks:
-            if s['symbol'] not in seen:seen.add(s['symbol']);unique.append(s)
-        log.info(f"{len(unique)} stocks");return unique
-    except Exception as e:
-        log.error(f"Fetch: {e}");return[]
+    log.info("DSE fetch (live API)...")
+    stocks=[]
+    for s in live_prices().values():
+        if s['ltp']<MIN_PRICE or s['volume']<MIN_VOLUME or abs(s['change'])>MAX_CHANGE:continue
+        stocks.append({k:s[k] for k in('symbol','ltp','high','low','yday','change','volume')})
+    log.info(f"{len(stocks)} stocks")
+    return stocks
 
 def get_dsex():
+    m=live_market()
     try:
-        r=requests.get("https://www.dsebd.org",headers=HEADERS,timeout=12,verify=False)
-        log.info(f"DSEX-DEBUG: HTTP {r.status_code}, response length {len(r.text)}")
-        for pat in[r'DSEX[^\d]*(\d{4,6}\.?\d{0,2})',r'>(\d{4,6}\.\d{2})<']:
-            found=re.findall(pat,r.text)
-            log.info(f"DSEX-DEBUG: pattern {pat!r} found {len(found)} matches, sample={found[:5]}")
-            for m in found:
-                try:
-                    v=float(m.replace(',',''))
-                    if 3000<v<10000:return f"{v:,.2f}"
-                except:continue
-        log.info(f"DSEX-DEBUG: no valid match, first 300 chars of response: {r.text[:300]}")
-        return "N/A"
+        for ix in (m or {}).get('indices',[]):
+            if ix.get('key')=='DSEX':
+                v=float(ix['value']);chg=float(ix.get('change') or 0);pct=float(ix.get('percent') or 0)
+                return f"{v:,.2f} ({chg:+.2f}, {pct:+.2f}%)"
     except Exception as e:
-        log.info(f"DSEX-DEBUG: exception - {type(e).__name__}: {e}")
-        return "N/A"
+        log.error(f"get_dsex: {e}")
+    return "N/A"
 
 # ══════════════════════
 #  STANDARD ANALYSIS (Fixed)
@@ -1934,103 +1884,26 @@ def build_msg(scored,breakouts,dsex,custom_idx=None,custom_chg=None,custom_wk=No
 #  AUTO UPDATE
 # ══════════════════════
 def is_dse_trading_day(date_str):
-    """
-    Shudhu Fri/Sat check korle Eid/Puja/onno sorkari chhuti (jegulo
-    Sun-Thu er modhdheo porte pare) dhora pore na. Tai dsebd.org er
-    day_end_archive.php - jeta shudhu DSE actual e trade hole entry
-    banay - direct check kori. Eta e "aj shotti trade hoyeche kina"
-    er shobcheye reliable indicator, fixed holiday calendar maintain
-    korar dorkar nei.
-
-    NOTE: age eta shudhu ?endDate=... diye query hoto, kintu oi
-    single-date-only form dsebd.org theke আসল archive table dey na -
-    ekta live ticker-strip page dey (always kichu-na-kichu table 2+ row
-    soho thake), tai age eta সবসময় True return korto (real bug, found
-    2026-08 via a Telegram error report). ?startDate=X&endDate=X
-    (range form, same date dutoy) shothik archive table dey - eta age
-    e proven hoyeche (user er manual gap-fill CSV download e eki
-    endpoint pattern e kaj korechilo). Time-of-day er upor nirbhor kore
-    na, tai auto_update_data (9:30am, market khular age) ar
-    send_signals (noon) - dutor jonnoi shothik.
-    """
-    try:
-        url=f"https://www.dsebd.org/day_end_archive.php?startDate={date_str}&endDate={date_str}&archive=data"
-        r=requests.get(url,headers=HEADERS,timeout=15,verify=False)
-        log.info(f"TradingDayCheck({date_str}): HTTP {r.status_code}, response length {len(r.text)}")
-        if r.status_code!=200:return None  # network issue - "unknown", caller decide
-        soup=BeautifulSoup(r.text,'html.parser')
-        tables=soup.find_all('table')
-        log.info(f"TradingDayCheck({date_str}): {len(tables)} tables found")
-        for t in tables:
-            rows=t.find_all('tr')
-            if len(rows)<2:continue
-            header_txt=' '.join(c.get_text(strip=True).upper() for c in rows[0].find_all(['th','td']))
-            if 'TRADING CODE' in header_txt or 'LTP' in header_txt:
-                log.info(f"TradingDayCheck({date_str}): real archive table found ({len(rows)} rows) -> trading day")
-                return True  # real archive table with actual columns - trade hoyeche
-        log.info(f"TradingDayCheck({date_str}): no real data table -> treating as non-trading day")
-        return False  # kono real data table nei - chhuti
-    except Exception as e:
-        log.error(f"TradingDayCheck: {e}")
-        return None  # unknown - caller e defensive thakte hobe
+    """DSE-er nijer session info diye: /api/live/market er session.date (aj,
+    BD) ar tradingDay; sessionDate = shesh trading din. Fri/Sat, Eid/Puja
+    sob chhuti DSE nijei jane, alada calendar lage na.
+    True = trading day, False = chhuti, None = jana gelo na (network)."""
+    m=live_market()
+    if not m:return None
+    sess=m.get('session') or {}
+    log.info(f"TradingDayCheck({date_str}): session={ {k:sess.get(k) for k in ('date','sessionDate','tradingDay','phase')} }")
+    if sess.get('sessionDate')==date_str:return True
+    if sess.get('date')==date_str and sess.get('tradingDay') is not None:
+        return bool(sess.get('tradingDay'))
+    return None
 
 async def auto_update_data(bot):
-    # Fast pre-filter: Fri/Sat e DSE kokhono trade hoy na, extra
-    # request na kore shorashori skip kori.
-    today_wd=datetime.now(BD_TZ).weekday()  # 0=Mon..4=Fri,5=Sat,6=Sun
-    if today_wd in(4,5):
-        log.info("Auto update skip - Fri/Sat, DSE bondho")
-        return
-    today=datetime.now(BD_TZ).strftime('%Y-%m-%d')
-    # Real check: Eid/Puja/sorkari chhuti hole (Sun-Thu hoyeo) DSE
-    # bondho thakte pare - eta dhorar jonno archive check kori.
-    # None (network error) hole - age er moto e cholte dei, jate
-    # ekta network glitch e legitimate trading day skip na hoy.
-    trading=is_dse_trading_day(today)
-    if trading is False:
-        log.info(f"Auto update skip - {today} DSE chhuti (holiday)")
-        return
-    log.info("Auto update...")
-    stocks=fetch_stocks()
-    if not stocks:return
-    # fetch_stocks() only covers the 'by value' page (top-turnover regular
-    # equities) - Mutual Funds and other low-price-but-actively-traded
-    # instruments never appear there. Supplement with the alphabet-listing
-    # pages, but only ADD symbols not already present (fetch_stocks()'s
-    # data has more fields like real volume, so don't overwrite it).
-    existing_syms={s['symbol'] for s in stocks}
-    try:
-        alpha_stocks=fetch_stocks_alpha()
-        added=0
-        for sym,data in alpha_stocks.items():
-            if sym not in existing_syms:
-                stocks.append(data)
-                added+=1
-        log.info(f"Alpha-page supplement: +{added} symbols (e.g. Mutual Funds) not in by-value list")
-    except Exception as e:
-        log.error(f"Alpha-page supplement failed: {e}")
-    updated=0
-    for s in stocks:
-        try:
-            url=f"{GITHUB_API}/{s['symbol']}.csv"
-            gh={'Authorization':f'token {GITHUB_TOKEN}','Accept':'application/vnd.github.v3+json'}
-            r=requests.get(url,headers=gh,timeout=15)
-            if r.status_code!=200:continue
-            info=r.json()
-            import base64
-            old=base64.b64decode(info['content']).decode('utf-8')
-            if today in old:continue
-            nl=f"\n{today},{s['high']},{s['high']},{s['low']},{s['ltp']},{s['volume']}"
-            # Trailing newline SHOBSHOMAI thakte hobe - noile fill_gap.py
-            # (local file append) porer bar ese ei lineর shathe mishe
-            # giye CSV row corrupt kore fele (eta e RSI/MACD bhul
-            # calculation er main karon chilo)
-            enc=base64.b64encode((old.rstrip()+nl+"\n").encode()).decode()
-            requests.put(url,headers=gh,json={'message':f"Update {s['symbol']} {today}",'content':enc,'sha':info['sha']},timeout=20)
-            updated+=1
-        except:pass
-    global _cache;_cache={}
-    log.info(f"Updated {updated}")
+    """Bondho kora hoyeche. Data update ekhon GitHub Actions-er update_data.py
+    kore (notun JSON API, ashol OHLC, holiday-safe sessionDate). Ei purono
+    job bhul column (Open=High, High-er jaygay Close) diye row likhto, ar
+    Actions-er shathe ek-i file e race korto. Scheduler theke-o shorano hoyeche."""
+    log.info("auto_update_data disabled - GitHub Actions handles data updates")
+    return
 
 # ══════════════════════
 #  SEND SIGNALS
@@ -3251,7 +3124,7 @@ async def post_init(app):
     # data thake na, tai "Data nei" ashto. Ekhon shob cron hour BD shomoy
     # hishebei cholbe (send_signals=12pm, auto_update_data=9:30am, etc.)
     sched.add_job(send_signals,'cron',day_of_week='sun,mon,tue,wed,thu',hour=17,minute=0,args=[app.bot])
-    sched.add_job(auto_update_data,'cron',day_of_week='sun,mon,tue,wed,thu',hour=9,minute=30,args=[app.bot])
+    # auto_update_data aar schedule kora hoy na - GitHub Actions data update kore
     sched.add_job(check_outcomes,'cron',hour=4,minute=0,args=[app.bot])
     sched.add_job(run_learning,'cron',hour=3,minute=0,args=[app.bot])
     # Volume spike alert EKHON auto-send hoy na - shudhu ekta daily
