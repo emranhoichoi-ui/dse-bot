@@ -1,6 +1,6 @@
-Trading dates to fill: 198
-From 2026-01-25 to 2026-10-27
-Dates already filled: 171
+Trading dates to fill: 199
+From 2026-01-25 to 2026-10-28
+Dates already filled: 172
 Dates to fill: 27
 [1/27] Fetching 2026-01-25...
 === DEBUG for 2026-01-25 ===
@@ -87,9 +87,9 @@ Gone. This page belonged to the old DSE website and has been retired.
 [26/27] Fetching 2026-10-22...
   2026-10-22: HTTP 410
   No data for 2026-10-22 (market may have been closed, or fetch failed)
-[27/27] Fetching 2026-10-27...
-  2026-10-27: HTTP 410
-  No data for 2026-10-27 (market may have been closed, or fetch failed)
+[27/27] Fetching 2026-10-28...
+  2026-10-28: HTTP 410
+  No data for 2026-10-28 (market may have been closed, or fetch failed)
 
 === DONE ===
 Filled 0 dates, 0 total rows added
