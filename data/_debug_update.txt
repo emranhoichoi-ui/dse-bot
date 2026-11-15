@@ -1,5 +1,5 @@
-=== update_data run 2026-11-12T17:05:25.917351 ===
+=== update_data run 2026-11-15T15:53:19.437749 ===
 DSE data update shuru...
-Live market: sessionDate=2026-11-12 tradingDay=True phase=closed tradeTime=Nov 12, 2026 at 2:40 PM
-Live API: 630 instrument, 381 traded
-Done! Date:2026-11-12 Updated:381 Skipped(already exists):0
+Live market: sessionDate=2026-11-15 tradingDay=True phase=closed tradeTime=Nov 15, 2026 at 2:40 PM
+Live API: 630 instrument, 380 traded
+Done! Date:2026-11-15 Updated:380 Skipped(already exists):0
